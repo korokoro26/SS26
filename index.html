@@ -1129,7 +1129,7 @@
     </section>
 
     <div class="mt-6 text-center">
-      <span class="text-[10px] text-gray-400 font-bold select-none">v3.8.0</span>
+      <span class="text-[10px] text-gray-400 font-bold select-none">v3.9.0</span>
     </div>
   </main>
 
@@ -1763,6 +1763,14 @@
   ];
 
   const DEFAULT_SKILL_TAGS = ['7NOW', '仕込み', 'カフェマシン清掃'];
+
+  // 過去のデモ用初期スタッフID＆名前（自動クリーンアップ対象）
+  const LEGACY_DEMO_STAFF = {
+    'st-2': '佐藤',
+    'st-3': '鈴木',
+    'st-4': '高橋',
+    'st-5': '田中'
+  };
 
   function createDefaultWeeklyMinStaffObj() {
     const obj = {};
@@ -2464,6 +2472,7 @@
         const savedDayOff = await dbGet('dayOffByDate');
         const savedSkillTags = await dbGet('skillTags');
         const savedMinStaffByStore = await dbGet('minStaffByStore');
+        const demoCleanedV39 = await dbGet('demoCleanedV39');
 
         if (savedStores && Array.isArray(savedStores) && savedStores.length > 0) {
           this.storeList = savedStores;
@@ -2490,8 +2499,14 @@
         }
 
         if (savedStaff && Array.isArray(savedStaff) && savedStaff.length > 0) {
+          let filteredStaff = savedStaff;
+          // 既存のブラウザデータに残っているデモ用4名（佐藤・鈴木・高橋・田中）を一度だけ自動クリーンアップ
+          if (!demoCleanedV39) {
+            filteredStaff = savedStaff.filter(st => !(LEGACY_DEMO_STAFF[st.id] && st.name === LEGACY_DEMO_STAFF[st.id]));
+          }
+
           const updatedStaff = [];
-          savedStaff.forEach(st => {
+          filteredStaff.forEach(st => {
             const used = new Set(updatedStaff.map(u => (u.color || '').toUpperCase()));
             let color = st.color;
             if (!color || used.has(color.toUpperCase())) {
@@ -2505,15 +2520,29 @@
               fixedShifts: Array.isArray(st.fixedShifts) ? st.fixedShifts : []
             });
           });
+
+          if (updatedStaff.length === 0) {
+            updatedStaff.push({
+              id: 'st-1',
+              name: 'オーナー',
+              color: DISTINCT_COLORS[0],
+              skills: ['7NOW', '仕込み', 'カフェマシン清掃'],
+              fixedShifts: []
+            });
+          }
+
           this.staffList = updatedStaff;
           await this.persistStaff();
         } else {
+          // 初期登録は「オーナー」1名のみ
           this.staffList = [
-            { id: 'st-1', name: 'オーナー', color: DISTINCT_COLORS[0], skills: ['7NOW', '仕込み', 'カフェマシン清掃'], fixedShifts: [] },
-            { id: 'st-2', name: '佐藤', color: DISTINCT_COLORS[1], skills: ['7NOW', 'カフェマシン清掃'], fixedShifts: [] },
-            { id: 'st-3', name: '鈴木', color: DISTINCT_COLORS[2], skills: ['仕込み'], fixedShifts: [] },
-            { id: 'st-4', name: '高橋', color: DISTINCT_COLORS[3], skills: ['7NOW'], fixedShifts: [] },
-            { id: 'st-5', name: '田中', color: DISTINCT_COLORS[4], skills: ['カフェマシン清掃'], fixedShifts: [] }
+            {
+              id: 'st-1',
+              name: 'オーナー',
+              color: DISTINCT_COLORS[0],
+              skills: ['7NOW', '仕込み', 'カフェマシン清掃'],
+              fixedShifts: []
+            }
           ];
           await this.persistStaff();
         }
@@ -2547,31 +2576,45 @@
           });
           await this.persistShifts();
         } else {
+          // 初期状態はデモシフトなしのクリーンな空テーブル
           this.shiftsByStore = {};
           this.storeList.forEach(st => {
             this.shiftsByStore[st.id] = {};
           });
-          const firstId = this.storeList[0].id;
-          this.currentWeekDays.forEach(d => {
-            this.populateSampleDay(firstId, d.dateStr);
-            const prevWeekDt = parseDateStr(d.dateStr);
-            prevWeekDt.setDate(prevWeekDt.getDate() - 7);
-            this.populateSampleDay(firstId, toDateStr(prevWeekDt));
-          });
           await this.persistShifts();
         }
 
-        this.ensureStoreDateInitialized(this.activeStoreId, this.currentDate);
-      },
+        // 過去バージョンのデモ4名分のシフト・希望休が残っていた場合はクリーンアップ
+        if (!demoCleanedV39) {
+          const validIds = new Set(this.staffList.map(s => s.id));
+          Object.keys(this.shiftsByStore).forEach(storeId => {
+            const storeShifts = this.shiftsByStore[storeId];
+            if (!storeShifts) return;
+            Object.keys(storeShifts).forEach(dateKey => {
+              const dayObj = storeShifts[dateKey];
+              if (!dayObj) return;
+              for (let h = 0; h < 24; h++) {
+                if (Array.isArray(dayObj[h])) {
+                  dayObj[h] = dayObj[h].filter(id => validIds.has(id));
+                }
+              }
+            });
+          });
+          Object.keys(this.dayOffByDate).forEach(dateKey => {
+            const dObj = this.dayOffByDate[dateKey];
+            if (!dObj) return;
+            Object.keys(dObj).forEach(staffId => {
+              if (!validIds.has(staffId)) {
+                delete dObj[staffId];
+              }
+            });
+          });
+          await this.persistShifts();
+          await this.persistDayOff();
+          await dbSet('demoCleanedV39', true);
+        }
 
-      populateSampleDay(storeId, dateStr) {
-        this.ensureStoreDateInitialized(storeId, dateStr);
-        const sample = this.shiftsByStore[storeId][dateStr];
-        for (let h = 0; h < 6; h++) sample[h] = ['st-5'];
-        for (let h = 6; h < 9; h++) sample[h] = ['st-1', 'st-3'];
-        for (let h = 9; h < 17; h++) sample[h] = ['st-2', 'st-3'];
-        for (let h = 17; h < 22; h++) sample[h] = ['st-2', 'st-4'];
-        for (let h = 22; h < 24; h++) sample[h] = ['st-5'];
+        this.ensureStoreDateInitialized(this.activeStoreId, this.currentDate);
       },
 
       ensureStoreDateInitialized(storeId, dateStr) {
