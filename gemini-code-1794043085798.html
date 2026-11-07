@@ -1,0 +1,3657 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#F2F2F7" />
+  <title>24H 週間シフト＆労務管理</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- jsPDF CDN (A4 PDF 出力用) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    :root {
+      --ios-bg: #F2F2F7;
+      --ios-card: #FFFFFF;
+      --ios-blue: #007AFF;
+    }
+
+    * {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+      box-sizing: border-box;
+    }
+
+    input, select {
+      user-select: auto;
+      -webkit-user-select: auto;
+    }
+
+    /* 写真フォルダへ長押し保存できるようにする画像用クラス */
+    .saveable-image {
+      -webkit-touch-callout: default !important;
+      user-select: auto !important;
+      -webkit-user-select: auto !important;
+    }
+
+    body {
+      background-color: #E5E5EA;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      color: #1C1C1E;
+      margin: 0;
+      padding: 0;
+      overscroll-behavior-y: none;
+      touch-action: manipulation;
+    }
+
+    .app-shell {
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100dvh;
+      background-color: var(--ios-bg);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 0 25px rgba(0,0,0,0.08);
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: calc(76px + env(safe-area-inset-bottom));
+    }
+
+    .bottom-nav {
+      max-width: 480px;
+      margin: 0 auto;
+      left: 0;
+      right: 0;
+      height: calc(64px + env(safe-area-inset-bottom));
+      padding-bottom: env(safe-area-inset-bottom);
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 0.5px solid rgba(60, 60, 67, 0.25);
+    }
+
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="app" class="app-shell">
+
+  <!-- ==========================================
+       上部ヘッダー（店舗左詰め ／ 右端にガイド＆店舗管理 ＆ 曜日セレクター）
+       ========================================== -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 px-3 pt-2.5 pb-2.5 shadow-2xs">
+    
+    <!-- 1段目：左側に店舗タブ（左詰め） ／ 右端に「ガイド」＆「店舗管理」を隣り合わせで固定配置 -->
+    <div class="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-gray-100">
+      <!-- 左側：複数店舗切替タブ（左詰め・横スクロール可） -->
+      <div class="flex items-center space-x-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
+        <button
+          v-for="store in storeList"
+          :key="store.id"
+          @click="activeStoreId = store.id"
+          :class="[
+            'min-h-[34px] px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 border',
+            activeStoreId === store.id
+              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+              : 'bg-gray-100 text-gray-700 border-gray-200/80 active:bg-gray-200'
+          ]"
+        >
+          <i data-lucide="store" class="w-3.5 h-3.5"></i>
+          <span class="max-w-[110px] truncate">{{ store.name }}</span>
+        </button>
+      </div>
+
+      <!-- 右端：ガイドボタン ＆ 店舗管理ボタン（隣り合わせで右寄せ） -->
+      <div class="flex items-center space-x-1.5 shrink-0">
+        <button
+          @click="openGuideModal"
+          class="min-h-[34px] px-2.5 py-1.5 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200 active:bg-emerald-100 flex items-center gap-1 shadow-2xs"
+          title="アプリの使い方ガイド"
+        >
+          <i data-lucide="book-open-check" class="w-3.5 h-3.5 text-emerald-600"></i>
+          <span>ガイド</span>
+        </button>
+
+        <button
+          @click="openStoreModal"
+          class="min-h-[34px] px-2.5 py-1.5 rounded-xl text-xs font-black bg-slate-800 text-white active:bg-slate-700 flex items-center gap-1 shadow-2xs"
+          title="店舗の追加・編集"
+        >
+          <i data-lucide="settings-2" class="w-3.5 h-3.5"></i>
+          <span>店舗管理</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 2段目：選択中店舗名の直接編集 ＆ 週切り替え（中央タップで週間カレンダー表示） -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center space-x-2 min-w-0 flex-1 mr-2">
+        <div class="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black shadow-2xs text-xs shrink-0">
+          24
+        </div>
+        <input 
+          v-if="currentStore"
+          type="text" 
+          v-model="currentStore.name" 
+          @change="persistStores"
+          placeholder="店舗名を入力"
+          class="font-extrabold text-sm bg-transparent border-b border-transparent focus:border-blue-500 focus:outline-none text-gray-900 w-full truncate"
+        />
+      </div>
+
+      <!-- 週の切り替えコントロール（中央ボタンで週間ブロックカレンダーを開く） -->
+      <div class="flex items-center space-x-1 shrink-0">
+        <button @click="changeWeek(-7)" class="touch-target flex items-center justify-center rounded-full active:bg-gray-100 text-gray-700" title="前の週">
+          <i data-lucide="chevron-left" class="w-5 h-5"></i>
+        </button>
+        <button
+          @click="openWeekCalendarModal"
+          class="px-3 py-1.5 rounded-xl bg-gray-100 active:bg-gray-200 text-gray-900 font-extrabold text-xs shadow-2xs flex items-center gap-1.5 border border-gray-200/60"
+          title="カレンダーから週を選択"
+        >
+          <i data-lucide="calendar" class="w-3.5 h-3.5 text-blue-600"></i>
+          <span>{{ weekRangeShortLabel }}</span>
+        </button>
+        <button @click="changeWeek(7)" class="touch-target flex items-center justify-center rounded-full active:bg-gray-100 text-gray-700" title="次の週">
+          <i data-lucide="chevron-right" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 3段目：月〜日 曜日セレクターバー -->
+    <div class="grid grid-cols-7 gap-1.5 mt-2">
+      <button
+        v-for="day in currentWeekDays"
+        :key="day.dateStr"
+        @click="selectDate(day.dateStr)"
+        :class="[
+          'py-1.5 rounded-xl flex flex-col items-center justify-center transition-all border shadow-2xs',
+          currentDate === day.dateStr
+            ? 'bg-blue-600 text-white border-blue-600 font-black scale-[1.03] shadow-sm'
+            : 'bg-gray-50 text-gray-800 border-gray-200 font-bold'
+        ]"
+      >
+        <span 
+          class="text-[10px] leading-none"
+          :class="[
+            currentDate === day.dateStr ? 'text-white/90' : (day.dayIndex === 6 ? 'text-blue-600' : day.dayIndex === 0 ? 'text-red-500' : 'text-gray-500')
+          ]"
+        >
+          {{ day.dayLabel }}
+        </span>
+        <span class="text-xs mt-0.5 leading-tight">{{ day.dayNum }}</span>
+        <span 
+          class="w-1.5 h-1.5 rounded-full mt-0.5"
+          :class="getDayFilledHoursCount(day.dateStr) === 24 
+            ? (currentDate === day.dateStr ? 'bg-green-300' : 'bg-green-500') 
+            : getDayFilledHoursCount(day.dateStr) > 0 
+              ? (currentDate === day.dateStr ? 'bg-amber-300' : 'bg-amber-400') 
+              : 'bg-transparent'"
+        ></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==========================================
+       メインコンテンツ領域
+       ========================================== -->
+  <main class="flex-1 px-3 pt-3 pb-6">
+
+    <!-- ==========================================
+         TAB 1 (一番左): 従業員登録
+         ・上部：従業員追加 ＆ 全員共通の習得項目テンプレート管理
+         ・下部：従業員の名前のみのシンプルリスト（タップで習得チェック＆週間固定シフト表を展開）
+         ========================================== -->
+    <section v-if="activeTab === 'staff'" class="space-y-3">
+      <!-- 1. 新規スタッフ追加バー -->
+      <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-gray-100">
+        <div class="flex space-x-2">
+          <input 
+            type="text" 
+            v-model="staffForm.name"
+            @keydown.enter.shift.prevent="saveStaff"
+            placeholder="新しい従業員の名前を入力"
+            class="flex-1 touch-target bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2 text-sm font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button 
+            @click="saveStaff"
+            class="touch-target bg-blue-600 active:bg-blue-700 text-white font-black text-sm rounded-xl px-4 py-2 shadow-sm transition flex items-center justify-center gap-1 shrink-0"
+          >
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>追加</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. 全員共通の習得管理（テンプレート一括設定） -->
+      <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-gray-100 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-black text-gray-800 flex items-center gap-1.5">
+            <i data-lucide="award" class="w-4 h-4 text-emerald-600"></i>
+            共通習得項目の管理（全員共通テンプレート）
+          </h3>
+        </div>
+
+        <!-- 登録されている共通習得タブ一覧 -->
+        <div class="flex flex-wrap gap-1.5">
+          <div
+            v-for="skill in skillTags"
+            :key="'master-skill-' + skill"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-black"
+          >
+            <span>{{ skill }}</span>
+            <button
+              @click="removeSkillTag(skill)"
+              class="text-emerald-500 hover:text-red-500 active:scale-90 transition p-0.5"
+              title="この共通項目を削除"
+            >
+              <i data-lucide="x" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 共通習得タブ追加バー -->
+        <div class="flex space-x-2">
+          <input
+            type="text"
+            v-model="newSkillName"
+            @keydown.enter.shift.prevent="addSkillTag"
+            placeholder="全員共通の習得項目を追加（例：フライヤー、発注）"
+            class="flex-1 min-h-[38px] bg-gray-50 border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button
+            @click="addSkillTag"
+            class="min-h-[38px] bg-emerald-600 active:bg-emerald-700 text-white font-black text-xs rounded-xl px-3.5 py-1.5 shadow-2xs transition flex items-center gap-1 shrink-0"
+          >
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>項目追加</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. 登録済みスタッフ一覧（初期表示はシンプルに名前のみ・タップで詳細展開） -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div v-if="staffList.length > 0" class="divide-y divide-gray-100">
+          <div 
+            v-for="staff in staffList" 
+            :key="staff.id"
+            class="transition-colors"
+          >
+            <!-- 初期表示行：色ドットと従業員の名前のみ -->
+            <button
+              @click="toggleStaffDetail(staff)"
+              class="w-full px-4 py-3.5 flex items-center justify-between text-left active:bg-gray-50 transition"
+              :class="expandedStaffId === staff.id ? 'bg-blue-50/40' : ''"
+            >
+              <div class="flex items-center space-x-3 min-w-0">
+                <span 
+                  class="w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs"
+                  :style="{ backgroundColor: staff.color }"
+                ></span>
+                <span class="text-sm font-black text-gray-900 truncate">{{ staff.name }}</span>
+              </div>
+              <i 
+                :data-lucide="expandedStaffId === staff.id ? 'chevron-up' : 'chevron-right'" 
+                class="w-4 h-4 text-gray-400 shrink-0"
+              ></i>
+            </button>
+
+            <!-- タップ後に展開される個人詳細エリア（共通習得項目のON/OFF ＆ 月〜日の週間固定シフト表） -->
+            <div 
+              v-if="expandedStaffId === staff.id" 
+              class="px-3.5 pb-4 pt-2.5 bg-gray-50/80 border-t border-gray-100 space-y-3.5"
+            >
+              <!-- (A) 個別の習得状況チェック（共通テンプレートからタップで選択するのみ） -->
+              <div class="bg-white rounded-xl p-3 border border-gray-200/80 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-black text-gray-800 flex items-center gap-1.5">
+                    <i data-lucide="check-square" class="w-3.5 h-3.5 text-emerald-600"></i>
+                    習得状況（タップで習得済みに切替）
+                  </span>
+                  <span class="text-[10px] font-bold text-gray-400">
+                    {{ (staff.skills && staff.skills.length) ? staff.skills.length : 0 }} / {{ skillTags.length }} 習得
+                  </span>
+                </div>
+
+                <div v-if="skillTags.length > 0" class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="skill in skillTags"
+                    :key="staff.id + '-skill-' + skill"
+                    @click="toggleStaffSkill(staff, skill)"
+                    class="px-3 py-1.5 rounded-xl text-xs font-black border transition flex items-center gap-1.5 active:scale-95"
+                    :class="hasStaffSkill(staff, skill)
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                      : 'bg-gray-50 text-gray-400 border-gray-200'"
+                  >
+                    <i :data-lucide="hasStaffSkill(staff, skill) ? 'check-circle-2' : 'circle'" class="w-3.5 h-3.5"></i>
+                    <span>{{ skill }}</span>
+                  </button>
+                </div>
+                <p v-else class="text-xs text-gray-400 font-bold">
+                  上の「共通習得項目の管理」から項目を追加してください
+                </p>
+              </div>
+
+              <!-- (B) 週間固定シフト表（月〜日 7日間の表形式で表示＆直接登録） -->
+              <div class="bg-white rounded-xl p-3 border border-gray-200/80 space-y-2.5">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-black text-gray-800 flex items-center gap-1.5">
+                    <i data-lucide="table-2" class="w-3.5 h-3.5 text-indigo-600"></i>
+                    週間固定シフト表（月〜日）
+                  </span>
+
+                  <!-- 登録されている固定シフトを今週のシフト表に一括反映する個別ボタン -->
+                  <button
+                    v-if="staff.fixedShifts && staff.fixedShifts.length > 0"
+                    @click="applyStaffFixedShiftsToWeek(staff)"
+                    class="min-h-[32px] px-3 py-1 rounded-lg bg-indigo-600 active:bg-indigo-700 text-white text-xs font-black flex items-center gap-1 shadow-2xs transition active:scale-95"
+                  >
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                    <span>今週のシフトに反映</span>
+                  </button>
+                </div>
+
+                <!-- 月〜日 7日間の固定シフト表 -->
+                <div class="border border-gray-200 rounded-xl overflow-hidden">
+                  <table class="w-full border-collapse text-xs">
+                    <thead>
+                      <tr class="bg-gray-100/90 border-b border-gray-200 text-[10px] font-black text-gray-600">
+                        <th class="w-12 py-1.5 text-center border-r border-gray-200">曜日</th>
+                        <th class="py-1.5 px-2.5 text-left">固定シフト時間</th>
+                        <th class="w-16 py-1.5 px-2 text-center border-l border-gray-200">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                      <template v-for="d in dayOfWeekOptions" :key="'fs-table-' + staff.id + '-' + d.dayIndex">
+                        <tr :class="editingFixedDayIndex === d.dayIndex ? 'bg-indigo-50/40' : 'bg-white'">
+                          <!-- 曜日セル -->
+                          <td
+                            class="py-2.5 text-center font-black border-r border-gray-100"
+                            :class="d.dayIndex === 0 ? 'text-red-600 bg-red-50/30' : d.dayIndex === 6 ? 'text-blue-600 bg-blue-50/30' : 'text-gray-800 bg-gray-50/40'"
+                          >
+                            {{ d.label }}
+                          </td>
+
+                          <!-- 登録されている固定シフト時間帯セル -->
+                          <td class="py-2 px-2.5">
+                            <div v-if="getStaffFixedShiftsForDay(staff, d.dayIndex).length > 0" class="flex flex-wrap gap-1.5">
+                              <span
+                                v-for="fs in getStaffFixedShiftsForDay(staff, d.dayIndex)"
+                                :key="fs.id"
+                                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-600 text-white font-black text-[11px] shadow-2xs"
+                              >
+                                <span>{{ fs.start }}:00〜{{ fs.end }}:00</span>
+                                <button
+                                  @click="removeFixedShift(staff, fs.id)"
+                                  class="hover:text-red-200 active:scale-90 ml-0.5"
+                                  title="解除"
+                                >
+                                  <i data-lucide="x" class="w-3 h-3"></i>
+                                </button>
+                              </span>
+                            </div>
+                            <span v-else class="text-[11px] font-bold text-gray-300">
+                              未設定
+                            </span>
+                          </td>
+
+                          <!-- 追加ボタンセル -->
+                          <td class="py-1.5 px-1.5 text-center border-l border-gray-100">
+                            <button
+                              @click="openDayFixedShiftPicker(d.dayIndex)"
+                              class="w-full py-1 px-1.5 rounded-lg text-[11px] font-black border transition flex items-center justify-center gap-0.5"
+                              :class="editingFixedDayIndex === d.dayIndex
+                                ? 'bg-gray-800 text-white border-gray-800'
+                                : 'bg-gray-50 text-indigo-600 border-gray-200 active:bg-indigo-50'"
+                            >
+                              <span>{{ editingFixedDayIndex === d.dayIndex ? '閉じる' : '＋登録' }}</span>
+                            </button>
+                          </td>
+                        </tr>
+
+                        <!-- その曜日の「＋登録」を押した時に直下に開く時間登録行 -->
+                        <tr v-if="editingFixedDayIndex === d.dayIndex" class="bg-indigo-50/70">
+                          <td colspan="3" class="p-2.5 space-y-2">
+                            <div class="flex items-center justify-between">
+                              <span class="text-[11px] font-black text-indigo-950">
+                                {{ d.label }}曜日の固定シフト時間を指定
+                              </span>
+                              <!-- ワンタップ定番ボタン -->
+                              <div class="flex gap-1">
+                                <button @click="quickAddFixedShiftForDay(staff, d.dayIndex, 6, 9)" class="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-black text-indigo-800 active:bg-indigo-100">6-9時</button>
+                                <button @click="quickAddFixedShiftForDay(staff, d.dayIndex, 9, 17)" class="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-black text-indigo-800 active:bg-indigo-100">9-17時</button>
+                                <button @click="quickAddFixedShiftForDay(staff, d.dayIndex, 17, 22)" class="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-black text-indigo-800 active:bg-indigo-100">17-22時</button>
+                                <button @click="quickAddFixedShiftForDay(staff, d.dayIndex, 22, 6)" class="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-black text-indigo-800 active:bg-indigo-100">22-6時</button>
+                              </div>
+                            </div>
+
+                            <div class="flex items-center space-x-1.5">
+                              <select v-model.number="fixedShiftForm.start" class="flex-1 min-h-[36px] bg-white border border-indigo-300 rounded-lg px-2 text-xs font-black text-gray-900">
+                                <option v-for="h in 24" :key="'fs-st-'+(h-1)" :value="h - 1">{{ h - 1 }}:00 から</option>
+                              </select>
+                              <span class="text-indigo-400 font-black text-xs">〜</span>
+                              <select v-model.number="fixedShiftForm.end" class="flex-1 min-h-[36px] bg-white border border-indigo-300 rounded-lg px-2 text-xs font-black text-gray-900">
+                                <option v-for="h in 24" :key="'fs-ed-'+h" :value="h">{{ h }}:00 まで</option>
+                              </select>
+                              <button
+                                @click="saveFixedShiftForSingleDay(staff, d.dayIndex)"
+                                class="min-h-[36px] px-3.5 py-1 bg-indigo-600 active:bg-indigo-700 text-white font-black text-xs rounded-lg shrink-0 shadow-2xs"
+                              >
+                                追加
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- (C) 名前の変更 ＆ 従業員削除 -->
+              <div class="flex items-center justify-between gap-2 pt-1">
+                <div class="flex items-center space-x-1.5 flex-1">
+                  <input
+                    type="text"
+                    v-model="staff.name"
+                    @change="persistStaff"
+                    class="flex-1 min-h-[36px] bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="名前を変更"
+                  />
+                </div>
+                <button
+                  @click="confirmDeleteStaff(staff)"
+                  class="min-h-[36px] px-3 py-1 rounded-lg bg-red-50 text-red-600 active:bg-red-100 text-xs font-black flex items-center gap-1 shrink-0"
+                >
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  <span>削除</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="p-8 text-center text-sm text-gray-400 font-bold">
+          登録されている従業員がいません
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 2 (左から2番目): 希望休管理
+         ========================================== -->
+    <section v-if="activeTab === 'dayoff'" class="space-y-3">
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-black text-gray-900 flex items-center gap-1.5">
+            <i data-lucide="calendar-off" class="w-4 h-4 text-rose-600"></i>
+            希望休管理（{{ weekRangeShortLabel }}）
+          </h2>
+          <div class="flex bg-gray-100 p-0.5 rounded-xl border border-gray-200">
+            <button
+              @click="dayOffViewMode = 'matrix'"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-black transition"
+              :class="dayOffViewMode === 'matrix' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500'"
+            >
+              終日一括
+            </button>
+            <button
+              @click="dayOffViewMode = 'hourly'"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-black transition"
+              :class="dayOffViewMode === 'hourly' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500'"
+            >
+              時間単位
+            </button>
+          </div>
+        </div>
+
+        <!-- モード1: 週間マトリクス -->
+        <div v-if="dayOffViewMode === 'matrix'" class="space-y-2">
+          <div v-if="staffList.length > 0" class="overflow-x-auto border border-gray-200 rounded-xl">
+            <table class="w-full border-collapse text-center table-fixed">
+              <thead>
+                <tr class="bg-gray-50 border-b border-gray-200 text-[10px] font-black text-gray-600">
+                  <th class="w-24 py-2 px-2 text-left">スタッフ</th>
+                  <th 
+                    v-for="day in currentWeekDays" 
+                    :key="'do-th-'+day.dateStr"
+                    class="py-1.5 border-l border-gray-200"
+                    :class="day.dayIndex === 0 ? 'text-red-600 bg-red-50/40' : day.dayIndex === 6 ? 'text-blue-600 bg-blue-50/40' : ''"
+                  >
+                    <div>{{ day.dayLabel }}</div>
+                    <div class="text-[9px] font-bold">{{ day.dayNum }}</div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100 text-xs">
+                <tr v-for="staff in staffList" :key="'do-row-'+staff.id">
+                  <td class="py-2 px-2 text-left font-black text-gray-900 truncate">
+                    <div class="flex items-center space-x-1.5 truncate">
+                      <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: staff.color }"></span>
+                      <span class="truncate">{{ staff.name }}</span>
+                    </div>
+                  </td>
+                  <td 
+                    v-for="day in currentWeekDays" 
+                    :key="'do-cell-'+staff.id+'-'+day.dateStr"
+                    class="border-l border-gray-100 p-1"
+                  >
+                    <button
+                      @click="toggleFullDayOff(day.dateStr, staff.id)"
+                      class="w-full h-9 rounded-lg font-black text-[11px] flex flex-col items-center justify-center transition active:scale-95"
+                      :class="getDayOffStatus(day.dateStr, staff.id) === 'full' 
+                        ? 'bg-rose-600 text-white shadow-2xs' 
+                        : getDayOffStatus(day.dateStr, staff.id) === 'partial'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : 'bg-gray-50 text-gray-300 hover:bg-gray-100'"
+                    >
+                      <span v-if="getDayOffStatus(day.dateStr, staff.id) === 'full'">休</span>
+                      <span v-else-if="getDayOffStatus(day.dateStr, staff.id) === 'partial'" class="text-[9px] leading-tight">
+                        一部<br>{{ getDayOffHoursCount(day.dateStr, staff.id) }}h
+                      </span>
+                      <span v-else>-</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="p-6 text-center text-xs text-gray-400 font-bold">
+            まずは従業員を登録してください
+          </div>
+        </div>
+
+        <!-- モード2: 時間単位 -->
+        <div v-if="dayOffViewMode === 'hourly'" class="space-y-3">
+          <div v-if="staffList.length > 0" class="flex items-center space-x-2">
+            <div class="relative flex-1">
+              <span 
+                v-if="selectedStaff"
+                class="w-3.5 h-3.5 rounded-full absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                :style="{ backgroundColor: selectedStaff.color }"
+              ></span>
+              <select
+                v-model="selectedStaffId"
+                class="w-full touch-target pl-8 pr-8 py-2 bg-gray-50 border border-gray-300 rounded-xl font-black text-sm text-gray-900 appearance-none focus:outline-none focus:ring-2 focus:ring-rose-500"
+              >
+                <option v-for="staff in staffList" :key="'do-sel-'+staff.id" :value="staff.id">
+                  {{ staff.name }}（{{ formattedDateShort }}の希望休：{{ getDayOffHoursCount(currentDate, staff.id) }}時間）
+                </option>
+              </select>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+            </div>
+
+            <button
+              @click="toggleFullDayOff(currentDate, selectedStaffId)"
+              class="touch-target px-3 py-2 rounded-xl text-xs font-black border shrink-0 transition"
+              :class="getDayOffStatus(currentDate, selectedStaffId) === 'full' 
+                ? 'bg-gray-100 text-gray-700 border-gray-300' 
+                : 'bg-rose-600 text-white border-rose-600 shadow-2xs'"
+            >
+              {{ getDayOffStatus(currentDate, selectedStaffId) === 'full' ? '終日解除' : '終日休にする' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 時間単位モード時の24時間タイムライン（時間列の横幅をw-16で完全統一） -->
+      <div v-if="dayOffViewMode === 'hourly' && staffList.length > 0" class="bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden divide-y divide-gray-100">
+        <div 
+          v-for="hour in 24" 
+          :key="'do-h-'+(hour - 1)"
+          @click="toggleHourDayOff(currentDate, hour - 1, selectedStaffId)"
+          class="flex items-stretch min-h-[46px] active:bg-rose-50/70 transition-colors cursor-pointer"
+        >
+          <div class="w-16 shrink-0 flex items-center justify-center border-r border-gray-100 bg-gray-50/70">
+            <span class="text-sm font-black text-gray-800 tabular-nums whitespace-nowrap">{{ hour - 1 }}時</span>
+          </div>
+
+          <div class="flex-1 px-2.5 py-1.5 flex flex-wrap items-center gap-1.5">
+            <template v-if="getDayOffStaffForHour(currentDate, hour - 1).length > 0">
+              <div
+                v-for="st in getDayOffStaffForHour(currentDate, hour - 1)"
+                :key="'do-chip-'+st.id"
+                @click.stop="toggleHourDayOff(currentDate, hour - 1, st.id)"
+                class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black bg-rose-600 text-white shadow-2xs active:scale-95 transition"
+              >
+                <i data-lucide="calendar-off" class="w-3 h-3"></i>
+                <span>{{ st.name }}（希望休）</span>
+                <i data-lucide="x" class="w-3 h-3 opacity-85"></i>
+              </div>
+            </template>
+            <template v-else>
+              <span class="text-xs text-gray-300 font-semibold">タップして希望休（勤務不可）に設定</span>
+            </template>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 3 (左から3番目): シフト表作成
+         ・一覧アコーディオンは「一覧」を再タップするまで閉じずに常時表示
+         ・0時〜23時の時間列は w-16 + tabular-nums で横幅を完全統一
+         ========================================== -->
+    <section v-if="activeTab === 'shift'" class="space-y-3">
+      
+      <!-- スタッフ選択バー -->
+      <div class="sticky top-[148px] z-20 bg-[#F2F2F7]/95 backdrop-blur-md pt-1 pb-2 border-b border-gray-200/80">
+        <div v-if="staffList.length > 0" class="bg-white rounded-2xl p-3 shadow-sm border border-gray-200 space-y-2">
+          
+          <div class="flex items-center space-x-2">
+            <div class="relative flex-1">
+              <span 
+                v-if="selectedStaff"
+                class="w-4 h-4 rounded-full absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none shadow-2xs"
+                :style="{ backgroundColor: selectedStaff.color }"
+              ></span>
+              <select
+                v-model="selectedStaffId"
+                class="w-full touch-target pl-9 pr-8 py-2.5 bg-gray-50 border border-gray-300 rounded-xl font-black text-sm text-gray-900 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option v-for="staff in staffList" :key="staff.id" :value="staff.id">
+                  {{ staff.name }}（{{ getStaffTotalHours(staff.id) }}時間）{{ getDayOffStatus(currentDate, staff.id) === 'full' ? '【希望休】' : getDayOffStatus(currentDate, staff.id) === 'partial' ? '【一部希望休】' : '' }}
+                </option>
+              </select>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+            </div>
+
+            <button
+              @click="showStaffGrid = !showStaffGrid"
+              class="touch-target px-3 py-2.5 rounded-xl border text-xs font-black flex items-center gap-1 shrink-0 transition shadow-2xs"
+              :class="showStaffGrid ? 'bg-gray-900 text-white border-gray-900' : 'bg-gray-100 text-gray-800 border-gray-200'"
+            >
+              <i data-lucide="layout-grid" class="w-4 h-4"></i>
+              <span>一覧</span>
+            </button>
+
+            <button 
+              @click="openQuickPresetModal" 
+              class="touch-target px-3 py-2.5 rounded-xl bg-blue-600 active:bg-blue-700 text-white text-xs font-black flex items-center gap-1 shrink-0 shadow-sm"
+            >
+              <i data-lucide="clock" class="w-4 h-4"></i>
+              <span>一括</span>
+            </button>
+          </div>
+
+          <!-- 選択中スタッフの習得タグ ＆ 固定シフト反映ショートカット -->
+          <div v-if="selectedStaff && ((selectedStaff.skills && selectedStaff.skills.length > 0) || (selectedStaff.fixedShifts && selectedStaff.fixedShifts.length > 0))" class="flex items-center justify-between gap-2 pt-1 border-t border-gray-100">
+            <div class="flex flex-wrap items-center gap-1 min-w-0">
+              <span
+                v-for="sk in selectedStaff.skills"
+                :key="'sel-sk-' + sk"
+                class="px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-black"
+              >
+                {{ sk }}
+              </span>
+            </div>
+
+            <button
+              v-if="selectedStaff.fixedShifts && selectedStaff.fixedShifts.length > 0"
+              @click="applyStaffFixedShiftsToWeek(selectedStaff)"
+              class="px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-black shrink-0 flex items-center gap-1 active:bg-indigo-100"
+            >
+              <i data-lucide="sparkles" class="w-3 h-3"></i>
+              <span>固定反映</span>
+            </button>
+          </div>
+
+          <!-- 一覧グリッド（「一覧」ボタンを再度押すまで閉じずに常時表示を維持） -->
+          <div v-if="showStaffGrid" class="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-gray-100">
+            <button
+              v-for="staff in staffList"
+              :key="'grid-'+staff.id"
+              @click="selectStaffFromGrid(staff.id)"
+              class="px-2.5 py-2 rounded-xl text-xs font-black flex items-center justify-between border transition shadow-2xs"
+              :class="selectedStaffId === staff.id ? 'ring-2 ring-blue-600' : 'bg-gray-50 border-gray-200 text-gray-800'"
+              :style="selectedStaffId === staff.id ? { backgroundColor: staff.color, color: '#fff', borderColor: staff.color } : {}"
+            >
+              <div class="flex items-center space-x-1.5 truncate">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: selectedStaffId === staff.id ? '#fff' : staff.color }"></span>
+                <span class="truncate">{{ staff.name }}</span>
+              </div>
+              <span class="text-[10px] shrink-0 ml-1 opacity-90">
+                {{ getDayOffStatus(currentDate, staff.id) === 'full' ? '休' : `（${getStaffTotalHours(staff.id)}時間）` }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 font-bold flex items-center justify-between">
+          <span>まずは従業員を登録してください</span>
+          <button @click="activeTab = 'staff'" class="bg-amber-600 text-white font-black px-3 py-1.5 rounded-lg">
+            登録画面へ
+          </button>
+        </div>
+      </div>
+
+      <!-- ツールバー -->
+      <div class="flex items-center justify-between px-0.5 gap-1">
+        <span class="text-xs font-black text-gray-800 truncate">
+          {{ formattedDateShort }}シフト
+        </span>
+        <div class="flex items-center space-x-1 shrink-0">
+          <button 
+            @click="openMinStaffModal" 
+            class="min-h-[36px] px-2.5 py-1 rounded-xl bg-white border border-gray-200 active:bg-gray-100 text-gray-700 text-[11px] font-black flex items-center gap-1 shadow-2xs"
+            title="最低必要人数を一括変更"
+          >
+            <i data-lucide="users" class="w-3.5 h-3.5 text-emerald-600"></i>
+            <span>必要人数一括</span>
+          </button>
+          <button 
+            @click="copyPreviousDayShift" 
+            class="min-h-[36px] px-2 py-1 rounded-xl bg-white border border-gray-200 active:bg-gray-100 text-gray-800 text-[11px] font-black flex items-center gap-1 shadow-2xs"
+          >
+            <i data-lucide="copy" class="w-3.5 h-3.5 text-blue-600"></i>
+            <span>前日</span>
+          </button>
+          <button 
+            @click="copyPreviousWeekShift" 
+            class="min-h-[36px] px-2 py-1 rounded-xl bg-white border border-indigo-200 active:bg-indigo-50 text-indigo-700 text-[11px] font-black flex items-center gap-1 shadow-2xs"
+          >
+            <i data-lucide="calendar-plus" class="w-3.5 h-3.5 text-indigo-600"></i>
+            <span>前週</span>
+          </button>
+          <button 
+            @click="clearCurrentDayShift" 
+            class="min-h-[36px] px-2 py-1 rounded-xl bg-white border border-red-200 active:bg-red-50 text-red-600 text-[11px] font-black flex items-center justify-center shadow-2xs"
+          >
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 0時〜23時 タイムライン（左側の時間列を w-16 固定幅＆等幅数字にして全時間の横幅を完全統一） -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden divide-y divide-gray-100">
+        <!-- シンプルな凡例バー -->
+        <div class="flex items-center justify-between px-3 py-1.5 bg-gray-50/90 text-[10px] font-black text-gray-500">
+          <span>時間 / 配置スタッフ</span>
+          <div class="flex items-center gap-2.5">
+            <span class="inline-flex items-center gap-1 text-emerald-700">
+              <span class="w-4 h-4 rounded-md bg-emerald-500 text-white inline-flex items-center justify-center">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v3h20v-3c0-3.33-6.67-5-10-5z"/></svg>
+              </span>
+              <span>いる</span>
+            </span>
+            <span class="inline-flex items-center gap-1 text-rose-600">
+              <span class="w-4 h-4 rounded-md bg-rose-50 border border-rose-400 text-rose-400 inline-flex items-center justify-center">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
+              <span>不足</span>
+            </span>
+          </div>
+        </div>
+
+        <div 
+          v-for="hour in 24" 
+          :key="hour - 1"
+          @click="toggleStaffInHour(hour - 1)"
+          class="flex items-stretch min-h-[50px] transition-colors"
+          :class="selectedStaffId && (isStaffDayOff(currentDate, hour - 1, selectedStaffId) || getConflictStore(currentDate, hour - 1, selectedStaffId)) ? 'bg-gray-100/80 cursor-not-allowed' : 'active:bg-blue-50/70 cursor-pointer'"
+        >
+          <!-- 時間列（w-16固定幅＋tabular-numsで1桁・2桁に関わらず横幅を完全統一） -->
+          <div 
+            class="w-16 shrink-0 flex items-center justify-center border-r border-gray-100 bg-gray-50/70 border-l-4 transition-colors"
+            :class="isHourFulfilled(currentDate, hour - 1) ? 'border-l-emerald-500' : 'border-l-rose-500'"
+          >
+            <span class="text-sm font-black text-gray-800 tabular-nums whitespace-nowrap">
+              {{ hour - 1 }}時
+            </span>
+          </div>
+
+          <!-- 配置スタッフチップ列 -->
+          <div class="flex-1 px-2.5 py-1.5 flex flex-wrap items-center gap-1.5 min-w-0">
+            <template v-if="getAssignedStaff(hour - 1).length > 0">
+              <div
+                v-for="staff in getAssignedStaff(hour - 1)"
+                :key="staff.id"
+                @click.stop="removeStaffFromHour(hour - 1, staff.id)"
+                class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black text-white shadow-2xs active:scale-95 transition"
+                :style="{ backgroundColor: staff.color }"
+              >
+                <span>{{ staff.name }}</span>
+                <i data-lucide="x" class="w-3 h-3 opacity-85"></i>
+              </div>
+            </template>
+
+            <!-- 選択中スタッフが希望休の場合のブロック表示 -->
+            <div
+              v-if="selectedStaff && isStaffDayOff(currentDate, hour - 1, selectedStaff.id)"
+              class="inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200"
+            >
+              <i data-lucide="calendar-off" class="w-3 h-3 text-rose-600 shrink-0"></i>
+              <span>{{ selectedStaff.name }}：希望休</span>
+            </div>
+
+            <!-- 選択中スタッフが別店舗勤務中の場合のブロック表示 -->
+            <div
+              v-else-if="selectedStaff && getConflictStore(currentDate, hour - 1, selectedStaff.id)"
+              class="inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-gray-200 text-gray-600 border border-gray-300"
+            >
+              <i data-lucide="lock" class="w-3 h-3 text-red-500 shrink-0"></i>
+              <span>{{ selectedStaff.name }}：{{ getConflictStore(currentDate, hour - 1, selectedStaff.id).name }}</span>
+            </div>
+
+            <template v-if="getAssignedStaff(hour - 1).length === 0 && !(selectedStaff && (isStaffDayOff(currentDate, hour - 1, selectedStaff.id) || getConflictStore(currentDate, hour - 1, selectedStaff.id)))">
+              <span class="text-xs text-gray-300 font-semibold">
+                タップして配置
+              </span>
+            </template>
+          </div>
+
+          <!-- 右側：人型シルエットによる直感的な必要人数インジケーター -->
+          <div
+            @click.stop
+            class="shrink-0 flex items-center gap-1 pr-1.5 pl-1.5 border-l border-gray-100 transition-colors"
+            :class="isHourFulfilled(currentDate, hour - 1) ? 'bg-emerald-50/60' : 'bg-rose-50/70'"
+          >
+            <button
+              @click.stop="adjustMinStaffForCurrentDay(hour - 1, -1)"
+              class="w-6 h-7 rounded-md text-gray-400 hover:text-gray-700 active:bg-gray-200/80 font-black text-xs flex items-center justify-center transition"
+              title="必要人数を1減らす"
+            >
+              −
+            </button>
+
+            <!-- 人型アイコン枠（1〜4人までは個別の人型シルエットタイルを並べて表示） -->
+            <div class="min-w-[54px] flex items-center justify-center gap-1 py-1">
+              <!-- 必要人数0人の時 -->
+              <template v-if="getMinStaffForDateHour(currentDate, hour - 1) === 0">
+                <span class="px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[10px] font-black flex items-center gap-0.5">
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <span>0</span>
+                </span>
+              </template>
+
+              <!-- 必要人数1〜4人の時：1人1枠の人型アイコンで「いる/いない」を明示 -->
+              <template v-else-if="getMinStaffForDateHour(currentDate, hour - 1) <= 4">
+                <div
+                  v-for="n in getMinStaffForDateHour(currentDate, hour - 1)"
+                  :key="'person-slot-' + (hour - 1) + '-' + n"
+                  class="w-6 h-6 rounded-lg flex items-center justify-center transition-all"
+                  :class="n <= getAssignedStaff(hour - 1).length
+                    ? (isHourFulfilled(currentDate, hour - 1)
+                        ? 'bg-emerald-500 text-white shadow-2xs'
+                        : 'bg-blue-600 text-white shadow-2xs')
+                    : 'bg-white border-2 border-rose-400 text-rose-400'"
+                  :title="n <= getAssignedStaff(hour - 1).length ? '配置済み' : '未配置（不足）'"
+                >
+                  <!-- いる時：塗りつぶしの人型シルエット -->
+                  <svg v-if="n <= getAssignedStaff(hour - 1).length" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v3h20v-3c0-3.33-6.67-5-10-5z"/>
+                  </svg>
+                  <!-- いない時：アウトライン人型シルエット -->
+                  <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                  </svg>
+                </div>
+              </template>
+
+              <!-- 5人以上設定されている場合：人型アイコン＋人数バッジ -->
+              <template v-else>
+                <div
+                  class="px-2 py-1 rounded-lg text-[11px] font-black flex items-center gap-1"
+                  :class="isHourFulfilled(currentDate, hour - 1) ? 'bg-emerald-500 text-white shadow-2xs' : 'bg-white border-2 border-rose-400 text-rose-600'"
+                >
+                  <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v3h20v-3c0-3.33-6.67-5-10-5z"/>
+                  </svg>
+                  <span>{{ getAssignedStaff(hour - 1).length }}/{{ getMinStaffForDateHour(currentDate, hour - 1) }}</span>
+                </div>
+              </template>
+            </div>
+
+            <button
+              @click.stop="adjustMinStaffForCurrentDay(hour - 1, 1)"
+              class="w-6 h-7 rounded-md text-gray-400 hover:text-gray-700 active:bg-gray-200/80 font-black text-xs flex items-center justify-center transition"
+              title="必要人数を1増やす"
+            >
+              ＋
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 4 (左から4番目): 労務確認（初期表示は名前のみ・タップで店舗別＆曜日別の詳細を展開）
+         ========================================== -->
+    <section v-if="activeTab === 'labor'" class="space-y-3">
+      <!-- 従業員一覧（初期表示は名前のみ・タップで詳細展開） -->
+      <div v-if="staffList.length > 0" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-100">
+        <div 
+          v-for="stat in laborStatsList" 
+          :key="'labor-'+stat.staff.id"
+          class="transition-colors"
+        >
+          <!-- 初期表示行：色ドットと従業員名のみ -->
+          <button
+            @click="toggleLaborDetail(stat.staff.id)"
+            class="w-full px-4 py-3.5 flex items-center justify-between text-left active:bg-gray-50 transition"
+            :class="expandedLaborStaffId === stat.staff.id ? 'bg-blue-50/40' : ''"
+          >
+            <div class="flex items-center space-x-3 min-w-0">
+              <span 
+                class="w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs"
+                :style="{ backgroundColor: stat.staff.color }"
+              ></span>
+              <span class="text-sm font-black text-gray-900 truncate">{{ stat.staff.name }}</span>
+              <span 
+                v-if="stat.hasAlert" 
+                class="w-2 h-2 rounded-full bg-red-500 shrink-0"
+                title="労務アラートあり"
+              ></span>
+            </div>
+            <i 
+              :data-lucide="expandedLaborStaffId === stat.staff.id ? 'chevron-up' : 'chevron-right'" 
+              class="w-4 h-4 text-gray-400 shrink-0"
+            ></i>
+          </button>
+
+          <!-- タップ後に展開される労務詳細（週合計 ＋ 店舗ごとの曜日・勤務時間帯・労働時間内訳） -->
+          <div 
+            v-if="expandedLaborStaffId === stat.staff.id" 
+            class="px-4 pb-4 pt-2 bg-gray-50/70 border-t border-gray-100 space-y-3"
+          >
+            <!-- 1. 全店舗合算サマリー ＆ 労務基準バッジ -->
+            <div class="bg-white rounded-xl p-3 border border-gray-200/80 space-y-2">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-[10px] font-bold text-gray-500">今週の総労働時間（全店舗合算）</p>
+                  <p class="text-base font-black" :class="stat.isOver40Hours ? 'text-red-600' : 'text-gray-900'">
+                    {{ stat.weeklyHours }}時間
+                    <span class="text-xs font-bold text-gray-500 ml-1">（出勤{{ stat.workDays }}日 / 休日{{ stat.restDays }}日）</span>
+                  </p>
+                </div>
+
+                <div class="flex flex-col items-end gap-1">
+                  <span 
+                    v-if="!stat.hasAlert"
+                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800"
+                  >
+                    <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+                    基準クリア
+                  </span>
+                  <span 
+                    v-if="stat.isOver40Hours"
+                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-100 text-red-700"
+                  >
+                    週40h超過（+{{ stat.weeklyHours - 40 }}h）
+                  </span>
+                  <span 
+                    v-if="stat.isNoHoliday"
+                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-100 text-red-700"
+                  >
+                    週休未確保
+                  </span>
+                </div>
+              </div>
+
+              <!-- ゲージ -->
+              <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  class="h-full rounded-full transition-all duration-300"
+                  :class="stat.isOver40Hours ? 'bg-red-500' : stat.weeklyHours >= 35 ? 'bg-amber-500' : 'bg-blue-600'"
+                  :style="{ width: Math.min(100, Math.round((stat.weeklyHours / 40) * 100)) + '%' }"
+                ></div>
+              </div>
+            </div>
+
+            <!-- 2. 店舗ごとの個別曜日・勤務時間帯・労働時間詳細 -->
+            <div class="space-y-2">
+              <div
+                v-for="storeDetail in stat.storeDetails"
+                :key="'st-det-' + stat.staff.id + '-' + storeDetail.storeId"
+                class="bg-white rounded-xl p-3 border border-gray-200/80 space-y-2"
+              >
+                <div class="flex items-center justify-between border-b border-gray-100 pb-1.5">
+                  <span class="text-xs font-black text-gray-800 flex items-center gap-1.5">
+                    <i data-lucide="store" class="w-3.5 h-3.5 text-blue-600"></i>
+                    {{ storeDetail.storeName }}
+                  </span>
+                  <span class="text-xs font-black text-blue-600">
+                    週合計 {{ storeDetail.totalHours }}時間（{{ storeDetail.workDaysCount }}日）
+                  </span>
+                </div>
+
+                <!-- 曜日ごとの勤務時間帯＆労働時間リスト -->
+                <div class="divide-y divide-gray-100 text-xs">
+                  <div
+                    v-for="d in storeDetail.days"
+                    :key="'st-day-' + storeDetail.storeId + '-' + d.dateStr"
+                    @click="jumpToShiftDayWithStore(storeDetail.storeId, d.dateStr, stat.staff.id)"
+                    class="py-1.5 flex items-center justify-between cursor-pointer active:bg-blue-50/50 rounded px-1"
+                  >
+                    <div class="flex items-center space-x-2">
+                      <span
+                        class="w-14 font-black tabular-nums"
+                        :class="d.dayIndex === 0 ? 'text-red-600' : d.dayIndex === 6 ? 'text-blue-600' : 'text-gray-700'"
+                      >
+                        {{ d.shortDate }}({{ d.dayLabel }})
+                      </span>
+                      <span v-if="d.hours > 0" class="font-bold text-gray-800">
+                        {{ d.rangesText }}
+                      </span>
+                      <span v-else-if="d.isDayOff" class="text-[11px] font-bold text-rose-500">
+                        希望休
+                      </span>
+                      <span v-else class="text-[11px] font-semibold text-gray-300">
+                        勤務なし
+                      </span>
+                    </div>
+
+                    <span
+                      class="font-black tabular-nums"
+                      :class="d.hours > 0 ? 'text-gray-900' : 'text-gray-300'"
+                    >
+                      {{ d.hours > 0 ? d.hours + 'h' : '-' }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="bg-white rounded-2xl p-8 text-center text-sm text-gray-400 font-bold border border-gray-100">
+        登録されている従業員がいません
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 5 (一番右): シフト表出力（スクロールなしで画面内にA4全体を一括表示）
+         ========================================== -->
+    <section v-if="activeTab === 'export'" class="space-y-3">
+      <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-gray-100 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-black text-gray-900 flex items-center gap-1.5">
+            <i data-lucide="printer" class="w-4 h-4 text-blue-600"></i>
+            {{ currentStore ? currentStore.name : '' }} — シフト表出力
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button 
+            @click="exportAsPDF"
+            :disabled="isExporting"
+            class="touch-target bg-blue-600 active:bg-blue-700 disabled:opacity-50 text-white font-black text-xs rounded-xl py-2.5 px-3 shadow-sm flex items-center justify-center gap-1.5 transition"
+          >
+            <i data-lucide="file-down" class="w-4 h-4"></i>
+            <span>{{ isExporting ? '処理中...' : 'A4 PDFで保存' }}</span>
+          </button>
+
+          <button 
+            @click="exportAsPNG"
+            :disabled="isExporting"
+            class="touch-target bg-emerald-600 active:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs rounded-xl py-2.5 px-3 shadow-sm flex items-center justify-center gap-1.5 transition"
+          >
+            <i data-lucide="image-down" class="w-4 h-4"></i>
+            <span>{{ isExporting ? '処理中...' : 'PNG画像で保存' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- スクロールなしでスマホ画面幅いっぱいにA4全体が収まるプレビュー枠 -->
+      <div class="bg-white rounded-2xl p-2 shadow-sm border border-gray-100">
+        <div class="w-full rounded-xl bg-slate-900/5 p-1 border border-gray-200/80 overflow-hidden">
+          <img 
+            v-if="previewDataUrl" 
+            :src="previewDataUrl" 
+            alt="A4週間シフト表プレビュー" 
+            class="saveable-image w-full h-auto aspect-[1123/794] object-contain rounded-lg shadow-xs bg-white block"
+          />
+        </div>
+      </div>
+    </section>
+
+    <div class="mt-6 text-center">
+      <span class="text-[10px] text-gray-400 font-bold select-none">v3.8.0</span>
+    </div>
+  </main>
+
+  <!-- ==========================================
+       モーダル A: スマホ向け使い方ガイド（オンボーディング）
+       ========================================== -->
+  <div 
+    v-if="showGuideModal" 
+    @click.self="showGuideModal = false"
+    class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+  >
+    <div class="bg-white w-full max-w-[480px] rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl max-h-[88dvh] flex flex-col">
+      <!-- ヘッダー -->
+      <div class="flex items-center justify-between border-b border-gray-100 pb-3 shrink-0">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-2xs">
+            <i data-lucide="book-open-check" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-black text-gray-900">使い方ガイド（オンボーディング）</h3>
+            <p class="text-[10px] font-bold text-gray-400">ステップ {{ guideStep + 1 }} / {{ guideSteps.length }}</p>
+          </div>
+        </div>
+        <button @click="showGuideModal = false" class="touch-target flex items-center justify-center text-gray-400 active:text-gray-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- ステップインジケーターバー -->
+      <div class="grid grid-cols-6 gap-1.5 shrink-0">
+        <button
+          v-for="(st, idx) in guideSteps"
+          :key="'guide-dot-' + idx"
+          @click="guideStep = idx"
+          class="h-1.5 rounded-full transition-all"
+          :class="guideStep === idx ? 'bg-emerald-600' : idx < guideStep ? 'bg-emerald-200' : 'bg-gray-200'"
+        ></button>
+      </div>
+
+      <!-- ガイド本文コンテンツ（スクロール可） -->
+      <div class="flex-1 overflow-y-auto space-y-3 py-1 pr-0.5">
+        <div class="rounded-2xl p-4 border space-y-2.5" :class="guideSteps[guideStep].bgClass">
+          <div class="flex items-center gap-2.5">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-xs shrink-0" :class="guideSteps[guideStep].iconBgClass">
+              <i :data-lucide="guideSteps[guideStep].icon" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <span class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/80 text-gray-700">
+                {{ guideSteps[guideStep].badge }}
+              </span>
+              <h4 class="text-base font-black text-gray-900 mt-0.5">
+                {{ guideSteps[guideStep].title }}
+              </h4>
+            </div>
+          </div>
+
+          <p class="text-xs font-bold text-gray-700 leading-relaxed">
+            {{ guideSteps[guideStep].description }}
+          </p>
+        </div>
+
+        <!-- 具体的なポイント解説リスト -->
+        <div class="space-y-2">
+          <div
+            v-for="(pt, pIdx) in guideSteps[guideStep].points"
+            :key="'guide-pt-' + pIdx"
+            class="bg-gray-50 rounded-xl p-3 border border-gray-200/80 flex items-start gap-2.5"
+          >
+            <span class="w-5 h-5 rounded-full bg-gray-900 text-white text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5">
+              {{ pIdx + 1 }}
+            </span>
+            <div class="space-y-0.5">
+              <p class="text-xs font-black text-gray-900">{{ pt.heading }}</p>
+              <p class="text-[11px] font-bold text-gray-600 leading-relaxed">{{ pt.body }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 下部ナビゲーションボタン -->
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-gray-100 shrink-0">
+        <button
+          @click="prevGuideStep"
+          :disabled="guideStep === 0"
+          class="touch-target px-4 py-2.5 rounded-xl bg-gray-100 disabled:opacity-40 text-gray-700 font-black text-xs flex items-center gap-1"
+        >
+          <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          <span>前へ</span>
+        </button>
+
+        <button
+          v-if="guideSteps[guideStep].targetTab"
+          @click="jumpFromGuide(guideSteps[guideStep].targetTab)"
+          class="touch-target px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-black text-xs"
+        >
+          この画面を開く
+        </button>
+
+        <button
+          v-if="guideStep < guideSteps.length - 1"
+          @click="nextGuideStep"
+          class="touch-target px-5 py-2.5 rounded-xl bg-emerald-600 active:bg-emerald-700 text-white font-black text-xs flex items-center gap-1 shadow-sm"
+        >
+          <span>次へ</span>
+          <i data-lucide="chevron-right" class="w-4 h-4"></i>
+        </button>
+        <button
+          v-else
+          @click="showGuideModal = false"
+          class="touch-target px-5 py-2.5 rounded-xl bg-gray-900 active:bg-gray-800 text-white font-black text-xs shadow-sm"
+        >
+          はじめる
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       モーダル 0: 週間ブロック選択カレンダーモーダル（週の塊をタップして移動）
+       ========================================== -->
+  <div 
+    v-if="showWeekCalendarModal" 
+    @click.self="showWeekCalendarModal = false"
+    class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+  >
+    <div class="bg-white w-full max-w-[480px] rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+        <h3 class="text-sm font-black text-gray-900 flex items-center gap-1.5">
+          <i data-lucide="calendar" class="w-4 h-4 text-blue-600"></i>
+          移動する週を選択
+        </h3>
+        <div class="flex items-center gap-2">
+          <button
+            @click="selectWeekFromCalendar(todayDateStr)"
+            class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs font-black active:bg-blue-100"
+          >
+            今週へ戻る
+          </button>
+          <button @click="showWeekCalendarModal = false" class="touch-target flex items-center justify-center text-gray-400 active:text-gray-600">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- カレンダー月切り替え -->
+      <div class="flex items-center justify-between px-1">
+        <button
+          @click="changeCalendarMonth(-1)"
+          class="touch-target flex items-center justify-center rounded-xl bg-gray-100 active:bg-gray-200 text-gray-700"
+        >
+          <i data-lucide="chevron-left" class="w-5 h-5"></i>
+        </button>
+        <span class="text-base font-black text-gray-900">
+          {{ calendarYear }}年 {{ calendarMonth }}月
+        </span>
+        <button
+          @click="changeCalendarMonth(1)"
+          class="touch-target flex items-center justify-center rounded-xl bg-gray-100 active:bg-gray-200 text-gray-700"
+        >
+          <i data-lucide="chevron-right" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- 曜日ヘッダー（月曜始まり） -->
+      <div class="grid grid-cols-7 text-center text-[11px] font-black text-gray-400 px-2">
+        <span>月</span>
+        <span>火</span>
+        <span>水</span>
+        <span>木</span>
+        <span>金</span>
+        <span class="text-blue-500">土</span>
+        <span class="text-red-500">日</span>
+      </div>
+
+      <!-- 週の塊（行）ごとにタップして移動できる週間ブロックリスト -->
+      <div class="space-y-1.5">
+        <button
+          v-for="week in calendarWeeks"
+          :key="week.mondayStr"
+          @click="selectWeekFromCalendar(week.mondayStr)"
+          class="w-full grid grid-cols-7 items-center py-2.5 px-2 rounded-2xl border transition-all active:scale-[0.98]"
+          :class="week.isCurrentSelectedWeek
+            ? 'bg-blue-600 text-white border-blue-600 font-black shadow-md ring-2 ring-blue-200'
+            : 'bg-gray-50 hover:bg-blue-50/60 text-gray-800 border-gray-200/80 font-bold'"
+        >
+          <div
+            v-for="d in week.days"
+            :key="d.dateStr"
+            :class="!d.inMonth && !week.isCurrentSelectedWeek ? 'opacity-35' : ''"
+            class="flex flex-col items-center justify-center"
+          >
+            <span
+              class="text-xs leading-tight tabular-nums"
+              :class="[
+                week.isCurrentSelectedWeek
+                  ? 'text-white'
+                  : d.dayIndex === 0
+                    ? 'text-red-500'
+                    : d.dayIndex === 6
+                      ? 'text-blue-600'
+                      : 'text-gray-900'
+              ]"
+            >
+              {{ d.dayNum }}
+            </span>
+            <span
+              class="w-1.5 h-1.5 rounded-full mt-0.5"
+              :class="d.hasShift
+                ? (week.isCurrentSelectedWeek ? 'bg-green-300' : 'bg-blue-500')
+                : 'bg-transparent'"
+            ></span>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       モーダル 1: 時間指定で一括配置
+       ========================================== -->
+  <div 
+    v-if="showPresetModal" 
+    @click.self="showPresetModal = false"
+    class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+  >
+    <div class="bg-white w-full max-w-[480px] rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+        <div class="flex items-center space-x-2">
+          <span 
+            v-if="selectedStaff" 
+            class="w-4 h-4 rounded-full shadow-2xs" 
+            :style="{ backgroundColor: selectedStaff.color }"
+          ></span>
+          <h3 class="text-sm font-black text-gray-900">
+            {{ selectedStaff ? selectedStaff.name : '' }} を一括配置（{{ formattedDateShort }}）
+          </h3>
+        </div>
+        <button @click="showPresetModal = false" class="touch-target flex items-center justify-center text-gray-400 active:text-gray-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-2">
+        <p class="text-xs font-black text-gray-600">定番シフト枠</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button @click="applyShiftRange(6, 9)" class="touch-target bg-amber-50 active:bg-amber-100 border border-amber-200 rounded-xl p-2.5 text-left shadow-2xs">
+            <p class="text-xs font-black text-amber-900">6時〜9時（早朝）</p>
+            <p class="text-[10px] text-amber-700 font-bold">3時間</p>
+          </button>
+          <button @click="applyShiftRange(9, 17)" class="touch-target bg-blue-50 active:bg-blue-100 border border-blue-200 rounded-xl p-2.5 text-left shadow-2xs">
+            <p class="text-xs font-black text-blue-900">9時〜17時（日勤）</p>
+            <p class="text-[10px] text-blue-700 font-bold">8時間</p>
+          </button>
+          <button @click="applyShiftRange(17, 22)" class="touch-target bg-orange-50 active:bg-orange-100 border border-orange-200 rounded-xl p-2.5 text-left shadow-2xs">
+            <p class="text-xs font-black text-orange-900">17時〜22時（夕勤）</p>
+            <p class="text-[10px] text-orange-700 font-bold">5時間</p>
+          </button>
+          <button @click="applyShiftRange(22, 6)" class="touch-target bg-indigo-50 active:bg-indigo-100 border border-indigo-200 rounded-xl p-2.5 text-left shadow-2xs">
+            <p class="text-xs font-black text-indigo-900">22時〜翌6時（夜勤）</p>
+            <p class="text-[10px] text-indigo-700 font-bold">8時間</p>
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-2 pt-2 border-t border-gray-100">
+        <p class="text-xs font-black text-gray-600">開始〜終了時間を指定</p>
+        <div class="flex items-center space-x-2">
+          <select v-model.number="customRange.start" class="flex-1 touch-target bg-gray-50 border border-gray-300 rounded-xl px-3 text-sm font-black text-gray-900">
+            <option v-for="h in 24" :key="'st-'+(h-1)" :value="h - 1">{{ h - 1 }}時から</option>
+          </select>
+          <span class="text-gray-400 font-black">〜</span>
+          <select v-model.number="customRange.end" class="flex-1 touch-target bg-gray-50 border border-gray-300 rounded-xl px-3 text-sm font-black text-gray-900">
+            <option v-for="h in 24" :key="'ed-'+h" :value="h">{{ h }}時まで</option>
+          </select>
+        </div>
+        <div class="flex space-x-2 pt-2">
+          <button 
+            @click="clearStaffFromCurrentDay(selectedStaff.id)" 
+            class="touch-target flex-1 bg-red-50 text-red-600 font-black text-xs rounded-xl py-2.5 shadow-2xs"
+          >
+            この日の配置を解除
+          </button>
+          <button 
+            @click="applyShiftRange(customRange.start, customRange.end)" 
+            class="touch-target flex-1 bg-blue-600 text-white font-black text-xs rounded-xl py-2.5 shadow-sm"
+          >
+            この曜日に配置
+          </button>
+        </div>
+
+        <button 
+          @click="applyShiftRangeToWholeWeek(customRange.start, customRange.end)" 
+          class="w-full touch-target bg-indigo-50 active:bg-indigo-100 text-indigo-700 border border-indigo-200 font-black text-xs rounded-xl py-2.5 mt-1 flex items-center justify-center gap-1.5 shadow-2xs"
+        >
+          <i data-lucide="calendar-range" class="w-4 h-4"></i>
+          <span>今週7日間（月〜日）すべてに一括配置</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       モーダル 2: 最低必要人数のかんたん一括設定（曜日×時間固定）
+       ========================================== -->
+  <div 
+    v-if="showMinStaffModal" 
+    @click.self="showMinStaffModal = false"
+    class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+  >
+    <div class="bg-white w-full max-w-[480px] rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+        <h3 class="text-sm font-black text-gray-900 flex items-center gap-1.5">
+          <i data-lucide="users" class="w-4 h-4 text-emerald-600"></i>
+          最低必要人数の一括設定
+        </h3>
+        <button @click="showMinStaffModal = false" class="touch-target flex items-center justify-center text-gray-400 active:text-gray-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- 1. 曜日の選択 -->
+      <div class="space-y-1.5">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-black text-gray-700">1. 曜日</p>
+          <div class="flex gap-1.5">
+            <button @click="selectMinStaffPresetDays('all')" class="text-[10px] font-black px-2 py-0.5 rounded bg-gray-100 text-gray-700 active:bg-gray-200">全曜日</button>
+            <button @click="selectMinStaffPresetDays('weekday')" class="text-[10px] font-black px-2 py-0.5 rounded bg-gray-100 text-gray-700 active:bg-gray-200">平日</button>
+            <button @click="selectMinStaffPresetDays('weekend')" class="text-[10px] font-black px-2 py-0.5 rounded bg-gray-100 text-gray-700 active:bg-gray-200">土日</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-7 gap-1">
+          <button
+            v-for="d in dayOfWeekOptions"
+            :key="'ms-day-' + d.dayIndex"
+            @click="toggleMinStaffFormDay(d.dayIndex)"
+            class="py-2 rounded-xl text-xs font-black border transition"
+            :class="minStaffBulkForm.days.includes(d.dayIndex)
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+              : 'bg-gray-50 text-gray-700 border-gray-200'"
+          >
+            {{ d.label }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. 時間帯の選択 -->
+      <div class="space-y-1.5">
+        <p class="text-xs font-black text-gray-700">2. 時間帯</p>
+        <div class="grid grid-cols-5 gap-1">
+          <button @click="setMinStaffFormHours(0, 24)" class="py-1.5 rounded-lg bg-gray-100 active:bg-gray-200 text-[10px] font-black text-gray-800">終日</button>
+          <button @click="setMinStaffFormHours(6, 9)" class="py-1.5 rounded-lg bg-amber-50 active:bg-amber-100 text-[10px] font-black text-amber-900">6-9時</button>
+          <button @click="setMinStaffFormHours(9, 17)" class="py-1.5 rounded-lg bg-blue-50 active:bg-blue-100 text-[10px] font-black text-blue-900">9-17時</button>
+          <button @click="setMinStaffFormHours(17, 22)" class="py-1.5 rounded-lg bg-orange-50 active:bg-orange-100 text-[10px] font-black text-orange-900">17-22時</button>
+          <button @click="setMinStaffFormHours(22, 6)" class="py-1.5 rounded-lg bg-indigo-50 active:bg-indigo-100 text-[10px] font-black text-indigo-900">22-6時</button>
+        </div>
+        <div class="flex items-center space-x-2 pt-1">
+          <select v-model.number="minStaffBulkForm.start" class="flex-1 touch-target bg-gray-50 border border-gray-300 rounded-xl px-3 text-sm font-black text-gray-900">
+            <option v-for="h in 24" :key="'ms-st-'+(h-1)" :value="h - 1">{{ h - 1 }}時から</option>
+          </select>
+          <span class="text-gray-400 font-black">〜</span>
+          <select v-model.number="minStaffBulkForm.end" class="flex-1 touch-target bg-gray-50 border border-gray-300 rounded-xl px-3 text-sm font-black text-gray-900">
+            <option v-for="h in 24" :key="'ms-ed-'+h" :value="h">{{ h }}時まで</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 3. 最低必要人数 -->
+      <div class="space-y-1.5">
+        <p class="text-xs font-black text-gray-700">3. 最低必要人数</p>
+        <div class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-2xl p-2.5">
+          <button
+            @click="minStaffBulkForm.count = Math.max(0, minStaffBulkForm.count - 1)"
+            class="w-11 h-11 rounded-xl bg-white border border-gray-300 active:bg-gray-100 text-gray-800 font-black text-lg flex items-center justify-center shadow-2xs"
+          >
+            −
+          </button>
+          <div class="flex items-center gap-1.5">
+            <span
+              v-for="n in Math.min(5, minStaffBulkForm.count)"
+              :key="'preview-person-' + n"
+              class="w-6 h-6 rounded-lg bg-emerald-500 text-white inline-flex items-center justify-center shadow-2xs"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v3h20v-3c0-3.33-6.67-5-10-5z"/>
+              </svg>
+            </span>
+            <span class="text-lg font-black text-gray-900 ml-1">{{ minStaffBulkForm.count }}人</span>
+          </div>
+          <button
+            @click="minStaffBulkForm.count++"
+            class="w-11 h-11 rounded-xl bg-white border border-gray-300 active:bg-gray-100 text-gray-800 font-black text-lg flex items-center justify-center shadow-2xs"
+          >
+            ＋
+          </button>
+        </div>
+      </div>
+
+      <div class="flex space-x-2 pt-1">
+        <button
+          @click="resetAllMinStaffToDefault"
+          class="touch-target px-3 bg-gray-100 active:bg-gray-200 text-gray-700 font-black text-xs rounded-xl py-2.5"
+        >
+          初期値(2人)に戻す
+        </button>
+        <button
+          @click="applyBulkMinStaff"
+          class="touch-target flex-1 bg-emerald-600 active:bg-emerald-700 text-white font-black text-xs rounded-xl py-2.5 shadow-sm"
+        >
+          一括反映する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       モーダル 3: 店舗管理
+       ========================================== -->
+  <div 
+    v-if="showStoreModal" 
+    @click.self="showStoreModal = false"
+    class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+  >
+    <div class="bg-white w-full max-w-[480px] rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+        <h3 class="text-sm font-black text-gray-900 flex items-center gap-1.5">
+          <i data-lucide="store" class="w-4 h-4 text-blue-600"></i>
+          店舗の追加・管理
+        </h3>
+        <button @click="showStoreModal = false" class="touch-target flex items-center justify-center text-gray-400 active:text-gray-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="flex space-x-2">
+        <input 
+          type="text" 
+          v-model="newStoreName"
+          @keydown.enter.shift.prevent="addStore"
+          placeholder="新しい店舗名（例：2号店）"
+          class="flex-1 touch-target bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2 text-sm font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button 
+          @click="addStore"
+          class="touch-target bg-blue-600 active:bg-blue-700 text-white font-black text-xs rounded-xl px-4 py-2 shadow-sm shrink-0 flex items-center gap-1"
+        >
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>店舗追加</span>
+        </button>
+      </div>
+
+      <div class="divide-y divide-gray-100 max-h-64 overflow-y-auto border border-gray-200 rounded-xl">
+        <div 
+          v-for="st in storeList" 
+          :key="'manage-'+st.id"
+          class="p-3 flex items-center justify-between gap-2 bg-white"
+        >
+          <input 
+            type="text"
+            v-model="st.name"
+            @change="persistStores"
+            class="flex-1 font-black text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            v-if="storeList.length > 1"
+            @click="deleteStore(st)"
+            class="touch-target px-2.5 py-1.5 rounded-lg text-red-600 active:bg-red-50 flex items-center justify-center shrink-0"
+            title="店舗を削除"
+          >
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       モーダル 4: 従業員削除確認ダイアログ
+       ========================================== -->
+  <div 
+    v-if="staffToDelete" 
+    @click.self="staffToDelete = null"
+    class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+  >
+    <div class="bg-white w-full max-w-xs rounded-2xl p-5 text-center space-y-4 shadow-xl">
+      <div class="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <div>
+        <h3 class="text-base font-black text-gray-900">従業員を削除しますか？</h3>
+        <p class="text-xs text-gray-500 font-medium mt-1">
+          「{{ staffToDelete.name }}」さんを削除します。全店舗のシフト配置データも解除されます。
+        </p>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button 
+          @click="staffToDelete = null"
+          class="touch-target bg-gray-100 text-gray-800 font-black text-xs rounded-xl py-2.5"
+        >
+          キャンセル
+        </button>
+        <button 
+          @click="deleteStaffConfirmed"
+          class="touch-target bg-red-600 text-white font-black text-xs rounded-xl py-2.5 shadow-sm"
+        >
+          削除する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       モーダル 5: 写真保存用フォールバック
+       ========================================== -->
+  <div 
+    v-if="showPhotoSaveModal" 
+    @click.self="showPhotoSaveModal = false"
+    class="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center p-4"
+  >
+    <div class="bg-white w-full max-w-[460px] rounded-3xl p-4 space-y-3 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-100 pb-2">
+        <span class="text-xs font-black text-blue-600 flex items-center gap-1">
+          <i data-lucide="smartphone" class="w-4 h-4"></i>
+          画像を長押しして「"写真"に保存」を選択してください
+        </span>
+        <button @click="showPhotoSaveModal = false" class="touch-target flex items-center justify-center text-gray-500">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="bg-gray-100 rounded-xl p-2 overflow-hidden flex items-center justify-center">
+        <img 
+          :src="previewDataUrl" 
+          alt="長押しして写真に保存" 
+          class="saveable-image w-full h-auto rounded shadow-sm bg-white block"
+        />
+      </div>
+
+      <button 
+        @click="showPhotoSaveModal = false"
+        class="w-full touch-target bg-gray-900 text-white font-black text-xs rounded-xl py-2.5"
+      >
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       下部タブバー（5つの機能：1.従業員登録 / 2.希望休管理 / 3.シフト表作成 / 4.労務確認 / 5.シフト表出力）
+       ========================================== -->
+  <nav class="bottom-nav fixed bottom-0 z-40 grid grid-cols-5 px-0.5">
+    <button 
+      @click="activeTab = 'staff'"
+      class="touch-target flex flex-col items-center justify-center py-1 transition"
+      :class="activeTab === 'staff' ? 'text-blue-600 font-black' : 'text-gray-400 font-bold'"
+    >
+      <i data-lucide="users" class="w-5 h-5 mb-0.5"></i>
+      <span class="text-[9.5px] tracking-tighter">従業員登録</span>
+    </button>
+
+    <button 
+      @click="activeTab = 'dayoff'"
+      class="touch-target flex flex-col items-center justify-center py-1 transition relative"
+      :class="activeTab === 'dayoff' ? 'text-rose-600 font-black' : 'text-gray-400 font-bold'"
+    >
+      <i data-lucide="calendar-off" class="w-5 h-5 mb-0.5"></i>
+      <span class="text-[9.5px] tracking-tighter">希望休管理</span>
+    </button>
+
+    <button 
+      @click="activeTab = 'shift'"
+      class="touch-target flex flex-col items-center justify-center py-1 transition"
+      :class="activeTab === 'shift' ? 'text-blue-600 font-black' : 'text-gray-400 font-bold'"
+    >
+      <i data-lucide="calendar-clock" class="w-5 h-5 mb-0.5"></i>
+      <span class="text-[9.5px] tracking-tighter">シフト表作成</span>
+    </button>
+
+    <button 
+      @click="activeTab = 'labor'"
+      class="touch-target flex flex-col items-center justify-center py-1 transition relative"
+      :class="activeTab === 'labor' ? 'text-blue-600 font-black' : 'text-gray-400 font-bold'"
+    >
+      <i data-lucide="shield-alert" class="w-5 h-5 mb-0.5"></i>
+      <span class="text-[9.5px] tracking-tighter">労務確認</span>
+      <span 
+        v-if="totalLaborAlertCount > 0"
+        class="absolute top-1.5 right-2.5 min-w-[15px] h-3.5 px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center"
+      >
+        {{ totalLaborAlertCount }}
+      </span>
+    </button>
+
+    <button 
+      @click="activeTab = 'export'"
+      class="touch-target flex flex-col items-center justify-center py-1 transition"
+      :class="activeTab === 'export' ? 'text-blue-600 font-black' : 'text-gray-400 font-bold'"
+    >
+      <i data-lucide="printer" class="w-5 h-5 mb-0.5"></i>
+      <span class="text-[9.5px] tracking-tighter">シフト表出力</span>
+    </button>
+  </nav>
+
+</div>
+
+<script>
+  (function setupPWA() {
+    const manifest = {
+      name: "コンビニ24時間 週間シフト＆労務管理",
+      short_name: "24Hシフト",
+      start_url: ".",
+      display: "standalone",
+      background_color: "#F2F2F7",
+      theme_color: "#007AFF",
+      icons: [{
+        src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23007AFF'/><text x='50%' y='58%' dominant-baseline='middle' text-anchor='middle' font-size='48' font-family='sans-serif' font-weight='bold' fill='white'>24</text></svg>",
+        sizes: "192x192",
+        type: "image/svg+xml"
+      }]
+    };
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest));
+    document.head.appendChild(link);
+  })();
+
+  const DISTINCT_COLORS = [
+    '#0062FF', '#E63946', '#00A859', '#EA580C', '#7B2CBF',
+    '#008B8B', '#D9048E', '#4F46E5', '#8B5A2B', '#2B9348',
+    '#C1121F', '#0077B6', '#9D4EDD', '#D97706', '#334155',
+    '#BE185D', '#0F766E', '#4338CA', '#65A30D', '#B45309'
+  ];
+
+  const DEFAULT_SKILL_TAGS = ['7NOW', '仕込み', 'カフェマシン清掃'];
+
+  function createDefaultWeeklyMinStaffObj() {
+    const obj = {};
+    for (let d = 0; d < 7; d++) {
+      obj[d] = {};
+      for (let h = 0; h < 24; h++) {
+        obj[d][h] = 2; // 初期設定は1時間あたり2人
+      }
+    }
+    return obj;
+  }
+
+  function formatHoursToRangesText(hoursArray) {
+    if (!hoursArray || hoursArray.length === 0) return '';
+    const sorted = [...hoursArray].sort((a, b) => a - b);
+    const ranges = [];
+    let start = sorted[0];
+    let prev = sorted[0];
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i] === prev + 1) {
+        prev = sorted[i];
+      } else {
+        ranges.push(`${start}〜${prev + 1}時`);
+        start = sorted[i];
+        prev = sorted[i];
+      }
+    }
+    ranges.push(`${start}〜${prev + 1}時`);
+    return ranges.join(', ');
+  }
+
+  function hslToHex(h, s, l) {
+    l /= 100;
+    const a = s * Math.min(l, 1 - l) / 100;
+    const f = n => {
+      const k = (n + h / 30) % 12;
+      const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+      return Math.round(255 * color).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`.toUpperCase();
+  }
+
+  function getUniqueDistinctColor(existingStaffList) {
+    const usedColors = new Set(existingStaffList.map(s => (s.color || '').toUpperCase()));
+    for (const c of DISTINCT_COLORS) {
+      if (!usedColors.has(c.toUpperCase())) return c;
+    }
+    let idx = existingStaffList.length;
+    while (true) {
+      const hue = Math.round((idx * 137.508) % 360);
+      const generated = hslToHex(hue, 78, 42);
+      if (!usedColors.has(generated)) return generated;
+      idx++;
+    }
+  }
+
+  const DB_NAME = 'ConvenienceStoreShiftDB';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'app_state';
+
+  function openDatabase() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function dbGet(key) {
+    try {
+      const db = await openDatabase();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  async function dbSet(key, value) {
+    try {
+      const db = await openDatabase();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.put(value, key);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function toDateStr(dateObj) {
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function parseDateStr(str) {
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function getMondayOfDate(dateStr) {
+    const dt = parseDateStr(dateStr);
+    const day = dt.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    dt.setDate(dt.getDate() + diffToMonday);
+    return dt;
+  }
+
+  function fillRoundRect(ctx, x, y, w, h, r) {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  const { createApp } = Vue;
+
+  createApp({
+    data() {
+      const now = new Date();
+      const todayStr = toDateStr(now);
+      return {
+        todayDateStr: todayStr,
+        activeTab: 'shift',
+        storeList: [],
+        activeStoreId: 'store-1',
+        showStoreModal: false,
+        newStoreName: '',
+
+        // オンボーディング（使い方ガイド）モーダル制御
+        showGuideModal: false,
+        guideStep: 0,
+        guideSteps: [
+          {
+            badge: 'STEP 1 / 全体像',
+            title: '複数店舗＆週間カレンダー移動',
+            icon: 'store',
+            bgClass: 'bg-blue-50/70 border-blue-200',
+            iconBgClass: 'bg-blue-600',
+            targetTab: null,
+            description: '画面上部のタブで店舗をワンタップ切り替えできます。データはすべて端末内に自動保存されます。',
+            points: [
+              { heading: '店舗の追加・名前変更', body: '右上の「店舗管理」から2号店・3号店などを自由に追加・編集できます。' },
+              { heading: 'カレンダーから週へ一発移動', body: '中央の「11/2(月)〜11/8(日)」などの日付ボタンを押すと月間カレンダーが開き、移動したい週の塊をタップするだけでその週へジャンプできます。' }
+            ]
+          },
+          {
+            badge: 'STEP 2 / 従業員登録',
+            title: '共通習得タブ＆週間固定シフト表',
+            icon: 'users',
+            bgClass: 'bg-emerald-50/70 border-emerald-200',
+            iconBgClass: 'bg-emerald-600',
+            targetTab: 'staff',
+            description: 'まずはスタッフの名前を登録します。一覧はすっきり名前のみが表示され、名前をタップすると個人の詳細設定が開きます。',
+            points: [
+              { heading: '全員共通の習得項目テンプレート', body: '上部の「共通習得項目の管理」で7NOW・仕込み・カフェマシン清掃などの項目を一括管理し、各スタッフの詳細画面で習得状況をON/OFFできます。' },
+              { heading: '月〜日の週間固定シフト表＆一括反映', body: 'スタッフ詳細の週間表（月〜日）に固定シフト時間を登録しておくと、「今週のシフトに反映」ボタン1つで今週のシフト表へ自動配置できます。' }
+            ]
+          },
+          {
+            badge: 'STEP 3 / 希望休管理',
+            title: '終日・時間単位の希望休ブロック',
+            icon: 'calendar-off',
+            bgClass: 'bg-rose-50/70 border-rose-200',
+            iconBgClass: 'bg-rose-600',
+            targetTab: 'dayoff',
+            description: 'スタッフから提出された希望休を事前に登録しておくと、シフト作成時に誤って配置してしまうのを自動で防ぎます。',
+            points: [
+              { heading: '終日一括モード', body: '週間マトリクス表をタップするだけで、その日の終日希望休をワンタップでON/OFFできます。' },
+              { heading: '時間単位モード', body: '「12時〜17時だけ休み」といった時間指定の勤務不可も1時間単位で登録できます。' }
+            ]
+          },
+          {
+            badge: 'STEP 4 / シフト表作成',
+            title: '連続配置＆人型アイコンの必要人数枠',
+            icon: 'calendar-clock',
+            bgClass: 'bg-indigo-50/70 border-indigo-200',
+            iconBgClass: 'bg-indigo-600',
+            targetTab: 'shift',
+            description: 'スタッフを選んで時間帯をタップするだけで直感的にシフトを作成できます。希望休や他店舗との重複は自動ブロックされます。',
+            points: [
+              { heading: '「一覧」の常時展開でスピード配置', body: '「一覧」ボタンを押すと全員のボタンが展開され、再度「一覧」を押すまで閉じないため、スタッフを次々切り替えながら高速に配置できます。' },
+              { heading: '人型アイコンで不足・充足をひと目で把握', body: '右側の人型アイコンで「最低必要人数を満たしているか（緑）」「何人不足しているか（赤枠）」が視覚的に分かります。＋/－や「必要人数一括」で曜日固定の人数を変更できます。' }
+            ]
+          },
+          {
+            badge: 'STEP 5 / 労務確認',
+            title: '全店舗合算＆店舗別の勤務内訳チェック',
+            icon: 'shield-alert',
+            bgClass: 'bg-amber-50/70 border-amber-200',
+            iconBgClass: 'bg-amber-600',
+            targetTab: 'labor',
+            description: '複数店舗を掛け持ちしているスタッフの週40時間超過や、週休未確保（7連勤）を自動で検知します。',
+            points: [
+              { heading: '名前タップで店舗別・曜日別の時間を展開', body: '普段は名前のみスッキリ表示され、名前をタップすると「どの店舗で・何曜日の何時〜何時に・何時間働いているか」が店舗別に詳しく確認できます。' },
+              { heading: 'タップで該当日のシフト編集へ移動', body: '内訳の曜日行をタップすると、その店舗・その日のシフト作成画面へ直接ジャンプして修正できます。' }
+            ]
+          },
+          {
+            badge: 'STEP 6 / シフト表出力',
+            title: 'A4横サイズのPDF＆高画質画像保存',
+            icon: 'printer',
+            bgClass: 'bg-slate-100 border-slate-300',
+            iconBgClass: 'bg-slate-800',
+            targetTab: 'export',
+            description: '完成したシフト表は、コンビニのバックヤード掲示やLINE共有に最適なA4横レイアウトで出力できます。',
+            points: [
+              { heading: 'スマホ画面でA4全体を一目で確認', body: '連続するシフト時間は自動で見やすい横バーに結合され、スマホ画面内でスクロールせずに全体を確認できます。' },
+              { heading: 'PDF出力 ＆ 写真フォルダ保存', body: '「A4 PDFで保存」で印刷用PDFを、「PNG画像で保存」でスマホの写真アプリやLINEへ直接共有できます。' }
+            ]
+          }
+        ],
+
+        currentDate: todayStr,
+        selectedStaffId: null,
+        staffToDelete: null,
+        showPresetModal: false,
+        showStaffGrid: false,
+        showPhotoSaveModal: false,
+        isExporting: false,
+        previewDataUrl: '',
+
+        // カレンダー週移動モーダル
+        showWeekCalendarModal: false,
+        calendarYear: now.getFullYear(),
+        calendarMonth: now.getMonth() + 1,
+
+        // 従業員登録ページ：タップした従業員のみ詳細展開
+        expandedStaffId: null,
+        editingFixedDayIndex: null,
+
+        // 労務確認ページ：タップした従業員のみ詳細展開
+        expandedLaborStaffId: null,
+
+        dayOffViewMode: 'matrix',
+        dayOffByDate: {},
+
+        staffForm: {
+          name: ''
+        },
+
+        // スキルタグ（全員共通テンプレート）管理
+        skillTags: [...DEFAULT_SKILL_TAGS],
+        newSkillName: '',
+
+        // 固定シフト登録フォーム
+        fixedShiftForm: {
+          start: 9,
+          end: 17
+        },
+
+        // 曜日別・時間帯別の最低必要人数（店舗ごと・曜日固定）
+        minStaffByStore: {},
+        showMinStaffModal: false,
+        minStaffBulkForm: {
+          days: [1, 2, 3, 4, 5, 6, 0],
+          start: 0,
+          end: 24,
+          count: 2
+        },
+
+        dayOfWeekOptions: [
+          { dayIndex: 1, label: '月' },
+          { dayIndex: 2, label: '火' },
+          { dayIndex: 3, label: '水' },
+          { dayIndex: 4, label: '木' },
+          { dayIndex: 5, label: '金' },
+          { dayIndex: 6, label: '土' },
+          { dayIndex: 0, label: '日' }
+        ],
+
+        customRange: {
+          start: 9,
+          end: 17
+        },
+
+        staffList: [],
+        shiftsByStore: {}
+      };
+    },
+
+    computed: {
+      currentStore() {
+        return this.storeList.find(s => s.id === this.activeStoreId) || this.storeList[0] || null;
+      },
+
+      currentStoreShifts() {
+        if (!this.shiftsByStore[this.activeStoreId]) {
+          return {};
+        }
+        return this.shiftsByStore[this.activeStoreId];
+      },
+
+      currentWeekDays() {
+        const monday = getMondayOfDate(this.currentDate);
+        const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+        const list = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+          const dStr = toDateStr(d);
+          const mNum = d.getMonth() + 1;
+          const dNum = d.getDate();
+          const dayIdx = d.getDay();
+          list.push({
+            dateStr: dStr,
+            monthNum: mNum,
+            dayNum: dNum,
+            dayIndex: dayIdx,
+            dayLabel: dayNames[dayIdx],
+            shortDate: `${mNum}/${dNum}`
+          });
+        }
+        return list;
+      },
+
+      // カレンダーモーダル用の週ブロック一覧（月曜〜日曜の塊）
+      calendarWeeks() {
+        const firstDayOfMonth = new Date(this.calendarYear, this.calendarMonth - 1, 1);
+        const lastDayOfMonth = new Date(this.calendarYear, this.calendarMonth, 0);
+        const currentMondayStr = toDateStr(getMondayOfDate(this.currentDate));
+
+        let cursorMonday = getMondayOfDate(toDateStr(firstDayOfMonth));
+        const weeks = [];
+
+        while (cursorMonday <= lastDayOfMonth || weeks.length < 5) {
+          const mondayStr = toDateStr(cursorMonday);
+          const days = [];
+          for (let i = 0; i < 7; i++) {
+            const d = new Date(cursorMonday.getFullYear(), cursorMonday.getMonth(), cursorMonday.getDate() + i);
+            const dStr = toDateStr(d);
+            days.push({
+              dateStr: dStr,
+              dayNum: d.getDate(),
+              dayIndex: d.getDay(),
+              inMonth: (d.getMonth() + 1) === this.calendarMonth,
+              hasShift: this.getDayFilledHoursCount(dStr) > 0
+            });
+          }
+          weeks.push({
+            mondayStr,
+            isCurrentSelectedWeek: mondayStr === currentMondayStr,
+            days
+          });
+          cursorMonday = new Date(cursorMonday.getFullYear(), cursorMonday.getMonth(), cursorMonday.getDate() + 7);
+          if (weeks.length >= 6) break;
+        }
+        return weeks;
+      },
+
+      weekRangeShortLabel() {
+        const days = this.currentWeekDays;
+        if (!days.length) return '';
+        return `${days[0].shortDate}(月)〜${days[6].shortDate}(日)`;
+      },
+
+      weekRangeFullLabel() {
+        const days = this.currentWeekDays;
+        if (!days.length) return '';
+        const first = parseDateStr(days[0].dateStr);
+        const last = parseDateStr(days[6].dateStr);
+        return `${first.getFullYear()}年${first.getMonth() + 1}月${first.getDate()}日(月)〜${last.getMonth() + 1}月${last.getDate()}日(日)`;
+      },
+
+      selectedStaff() {
+        return this.staffList.find(s => s.id === this.selectedStaffId) || null;
+      },
+
+      currentDaySchedule() {
+        const storeShifts = this.currentStoreShifts;
+        if (!storeShifts[this.currentDate]) {
+          const emptyDay = {};
+          for (let h = 0; h < 24; h++) emptyDay[h] = [];
+          return emptyDay;
+        }
+        return storeShifts[this.currentDate];
+      },
+
+      formattedDateShort() {
+        if (!this.currentDate) return '';
+        const dt = parseDateStr(this.currentDate);
+        const days = ['日', '月', '火', '水', '木', '金', '土'];
+        return `${dt.getMonth() + 1}/${dt.getDate()}(${days[dt.getDay()]})`;
+      },
+
+      // 労務管理統計（全店舗合算 ＋ 店舗別・曜日別の勤務時間帯＆労働時間内訳）
+      laborStatsList() {
+        return this.staffList.map(staff => {
+          let weeklyHours = 0;
+          let workDays = 0;
+
+          this.currentWeekDays.forEach(day => {
+            let workedAnyStoreToday = false;
+            this.storeList.forEach(st => {
+              const schedule = this.shiftsByStore[st.id] && this.shiftsByStore[st.id][day.dateStr];
+              if (schedule) {
+                for (let h = 0; h < 24; h++) {
+                  if (schedule[h] && schedule[h].includes(staff.id)) {
+                    weeklyHours++;
+                    workedAnyStoreToday = true;
+                  }
+                }
+              }
+            });
+            if (workedAnyStoreToday) workDays++;
+          });
+
+          // 店舗別の曜日・時間帯詳細
+          const storeDetails = this.storeList.map(st => {
+            let storeTotalHours = 0;
+            let storeWorkDaysCount = 0;
+
+            const days = this.currentWeekDays.map(day => {
+              const schedule = this.shiftsByStore[st.id] && this.shiftsByStore[st.id][day.dateStr];
+              const workedHours = [];
+              if (schedule) {
+                for (let h = 0; h < 24; h++) {
+                  if (schedule[h] && schedule[h].includes(staff.id)) {
+                    workedHours.push(h);
+                  }
+                }
+              }
+              if (workedHours.length > 0) {
+                storeTotalHours += workedHours.length;
+                storeWorkDaysCount++;
+              }
+              return {
+                dateStr: day.dateStr,
+                shortDate: day.shortDate,
+                dayLabel: day.dayLabel,
+                dayIndex: day.dayIndex,
+                hours: workedHours.length,
+                rangesText: formatHoursToRangesText(workedHours),
+                isDayOff: this.getDayOffStatus(day.dateStr, staff.id) === 'full'
+              };
+            });
+
+            return {
+              storeId: st.id,
+              storeName: st.name,
+              totalHours: storeTotalHours,
+              workDaysCount: storeWorkDaysCount,
+              days
+            };
+          });
+
+          const restDays = 7 - workDays;
+          const isOver40Hours = weeklyHours > 40;
+          const isNoHoliday = workDays >= 7;
+
+          return {
+            staff,
+            weeklyHours,
+            workDays,
+            restDays,
+            isOver40Hours,
+            isNoHoliday,
+            hasAlert: isOver40Hours || isNoHoliday,
+            storeDetails
+          };
+        });
+      },
+
+      totalLaborAlertCount() {
+        return this.laborStatsList.filter(s => s.hasAlert).length;
+      }
+    },
+
+    watch: {
+      activeStoreId(newStoreId) {
+        this.ensureStoreDateInitialized(newStoreId, this.currentDate);
+        this.ensureStoreMinStaffInitialized(newStoreId);
+        if (this.activeTab === 'export') {
+          this.updateCanvasPreview();
+        }
+        this.refreshIcons();
+      },
+      currentDate(newDate) {
+        this.ensureStoreDateInitialized(this.activeStoreId, newDate);
+        if (this.activeTab === 'export') {
+          this.updateCanvasPreview();
+        }
+        this.refreshIcons();
+      },
+      activeTab(newTab) {
+        if (newTab === 'export') {
+          this.updateCanvasPreview();
+        }
+        this.refreshIcons();
+      },
+      dayOffViewMode() {
+        this.refreshIcons();
+      },
+      showStaffGrid() {
+        this.refreshIcons();
+      },
+      showPhotoSaveModal() {
+        this.refreshIcons();
+      },
+      guideStep() {
+        this.refreshIcons();
+      }
+    },
+
+    async mounted() {
+      await this.loadAllData();
+      this.refreshIcons();
+    },
+
+    methods: {
+      refreshIcons() {
+        this.$nextTick(() => {
+          if (window.lucide) {
+            window.lucide.createIcons();
+          }
+        });
+      },
+
+      // オンボーディングガイドモーダル制御
+      openGuideModal() {
+        this.guideStep = 0;
+        this.showGuideModal = true;
+        this.refreshIcons();
+      },
+
+      nextGuideStep() {
+        if (this.guideStep < this.guideSteps.length - 1) {
+          this.guideStep++;
+        }
+      },
+
+      prevGuideStep() {
+        if (this.guideStep > 0) {
+          this.guideStep--;
+        }
+      },
+
+      jumpFromGuide(targetTab) {
+        if (targetTab) {
+          this.activeTab = targetTab;
+        }
+        this.showGuideModal = false;
+        this.refreshIcons();
+      },
+
+      selectDate(dateStr) {
+        this.currentDate = dateStr;
+      },
+
+      // カレンダーモーダル制御
+      openWeekCalendarModal() {
+        const dt = parseDateStr(this.currentDate);
+        this.calendarYear = dt.getFullYear();
+        this.calendarMonth = dt.getMonth() + 1;
+        this.showWeekCalendarModal = true;
+        this.refreshIcons();
+      },
+
+      changeCalendarMonth(offset) {
+        let m = this.calendarMonth + offset;
+        let y = this.calendarYear;
+        if (m < 1) {
+          m = 12;
+          y--;
+        } else if (m > 12) {
+          m = 1;
+          y++;
+        }
+        this.calendarYear = y;
+        this.calendarMonth = m;
+        this.refreshIcons();
+      },
+
+      selectWeekFromCalendar(targetDateStr) {
+        const monday = getMondayOfDate(targetDateStr);
+        this.currentDate = toDateStr(monday);
+        this.showWeekCalendarModal = false;
+        this.refreshIcons();
+      },
+
+      // 従業員詳細の開閉
+      toggleStaffDetail(staff) {
+        if (this.expandedStaffId === staff.id) {
+          this.expandedStaffId = null;
+          this.editingFixedDayIndex = null;
+        } else {
+          this.expandedStaffId = staff.id;
+          this.editingFixedDayIndex = null;
+          this.fixedShiftForm = {
+            start: 9,
+            end: 17
+          };
+        }
+        this.refreshIcons();
+      },
+
+      openDayFixedShiftPicker(dayIndex) {
+        if (this.editingFixedDayIndex === dayIndex) {
+          this.editingFixedDayIndex = null;
+        } else {
+          this.editingFixedDayIndex = dayIndex;
+        }
+        this.refreshIcons();
+      },
+
+      getStaffFixedShiftsForDay(staff, dayIndex) {
+        if (!staff || !Array.isArray(staff.fixedShifts)) return [];
+        return staff.fixedShifts
+          .filter(fs => fs.dayIndex === dayIndex)
+          .sort((a, b) => a.start - b.start);
+      },
+
+      async saveFixedShiftForSingleDay(staff, dayIndex) {
+        if (!Array.isArray(staff.fixedShifts)) {
+          staff.fixedShifts = [];
+        }
+        const start = this.fixedShiftForm.start;
+        const end = this.fixedShiftForm.end;
+        const exists = staff.fixedShifts.some(
+          fs => fs.dayIndex === dayIndex && fs.start === start && fs.end === end
+        );
+        if (!exists) {
+          staff.fixedShifts.push({
+            id: 'fs-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            dayIndex,
+            start,
+            end
+          });
+          await this.persistStaff();
+        }
+        this.editingFixedDayIndex = null;
+        this.refreshIcons();
+      },
+
+      async quickAddFixedShiftForDay(staff, dayIndex, start, end) {
+        if (!Array.isArray(staff.fixedShifts)) {
+          staff.fixedShifts = [];
+        }
+        const exists = staff.fixedShifts.some(
+          fs => fs.dayIndex === dayIndex && fs.start === start && fs.end === end
+        );
+        if (!exists) {
+          staff.fixedShifts.push({
+            id: 'fs-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            dayIndex,
+            start,
+            end
+          });
+          await this.persistStaff();
+        }
+        this.editingFixedDayIndex = null;
+        this.refreshIcons();
+      },
+
+      // 労務詳細の開閉
+      toggleLaborDetail(staffId) {
+        if (this.expandedLaborStaffId === staffId) {
+          this.expandedLaborStaffId = null;
+        } else {
+          this.expandedLaborStaffId = staffId;
+        }
+        this.refreshIcons();
+      },
+
+      jumpToShiftDayWithStore(storeId, dateStr, staffId) {
+        this.activeStoreId = storeId;
+        this.currentDate = dateStr;
+        this.selectedStaffId = staffId;
+        this.activeTab = 'shift';
+      },
+
+      async loadAllData() {
+        const savedStores = await dbGet('storeList');
+        const savedActiveStoreId = await dbGet('activeStoreId');
+        const savedStoreNameLegacy = await dbGet('storeName');
+        const savedStaff = await dbGet('staffList');
+        const savedShiftsByStore = await dbGet('shiftsByStore');
+        const savedShiftsLegacy = await dbGet('shiftsByDate');
+        const savedDayOff = await dbGet('dayOffByDate');
+        const savedSkillTags = await dbGet('skillTags');
+        const savedMinStaffByStore = await dbGet('minStaffByStore');
+
+        if (savedStores && Array.isArray(savedStores) && savedStores.length > 0) {
+          this.storeList = savedStores;
+        } else {
+          const firstStoreName = savedStoreNameLegacy || 'セブン-イレブン 1号店';
+          this.storeList = [
+            { id: 'store-1', name: firstStoreName },
+            { id: 'store-2', name: 'セブン-イレブン 2号店' }
+          ];
+          await this.persistStores();
+        }
+
+        if (savedActiveStoreId && this.storeList.some(s => s.id === savedActiveStoreId)) {
+          this.activeStoreId = savedActiveStoreId;
+        } else {
+          this.activeStoreId = this.storeList[0].id;
+        }
+
+        if (savedSkillTags && Array.isArray(savedSkillTags) && savedSkillTags.length > 0) {
+          this.skillTags = savedSkillTags;
+        } else {
+          this.skillTags = [...DEFAULT_SKILL_TAGS];
+          await this.persistSkillTags();
+        }
+
+        if (savedStaff && Array.isArray(savedStaff) && savedStaff.length > 0) {
+          const updatedStaff = [];
+          savedStaff.forEach(st => {
+            const used = new Set(updatedStaff.map(u => (u.color || '').toUpperCase()));
+            let color = st.color;
+            if (!color || used.has(color.toUpperCase())) {
+              color = getUniqueDistinctColor(updatedStaff);
+            }
+            updatedStaff.push({
+              id: st.id,
+              name: st.name,
+              color: color,
+              skills: Array.isArray(st.skills) ? st.skills : [],
+              fixedShifts: Array.isArray(st.fixedShifts) ? st.fixedShifts : []
+            });
+          });
+          this.staffList = updatedStaff;
+          await this.persistStaff();
+        } else {
+          this.staffList = [
+            { id: 'st-1', name: 'オーナー', color: DISTINCT_COLORS[0], skills: ['7NOW', '仕込み', 'カフェマシン清掃'], fixedShifts: [] },
+            { id: 'st-2', name: '佐藤', color: DISTINCT_COLORS[1], skills: ['7NOW', 'カフェマシン清掃'], fixedShifts: [] },
+            { id: 'st-3', name: '鈴木', color: DISTINCT_COLORS[2], skills: ['仕込み'], fixedShifts: [] },
+            { id: 'st-4', name: '高橋', color: DISTINCT_COLORS[3], skills: ['7NOW'], fixedShifts: [] },
+            { id: 'st-5', name: '田中', color: DISTINCT_COLORS[4], skills: ['カフェマシン清掃'], fixedShifts: [] }
+          ];
+          await this.persistStaff();
+        }
+
+        if (this.staffList.length > 0) {
+          this.selectedStaffId = this.staffList[0].id;
+        }
+
+        if (savedDayOff && typeof savedDayOff === 'object') {
+          this.dayOffByDate = savedDayOff;
+        }
+
+        if (savedMinStaffByStore && typeof savedMinStaffByStore === 'object') {
+          this.minStaffByStore = savedMinStaffByStore;
+        } else {
+          this.minStaffByStore = {};
+        }
+        this.storeList.forEach(st => {
+          this.ensureStoreMinStaffInitialized(st.id);
+        });
+        await this.persistMinStaff();
+
+        if (savedShiftsByStore && typeof savedShiftsByStore === 'object') {
+          this.shiftsByStore = savedShiftsByStore;
+        } else if (savedShiftsLegacy && typeof savedShiftsLegacy === 'object') {
+          this.shiftsByStore = {
+            [this.storeList[0].id]: savedShiftsLegacy
+          };
+          this.storeList.slice(1).forEach(st => {
+            this.shiftsByStore[st.id] = {};
+          });
+          await this.persistShifts();
+        } else {
+          this.shiftsByStore = {};
+          this.storeList.forEach(st => {
+            this.shiftsByStore[st.id] = {};
+          });
+          const firstId = this.storeList[0].id;
+          this.currentWeekDays.forEach(d => {
+            this.populateSampleDay(firstId, d.dateStr);
+            const prevWeekDt = parseDateStr(d.dateStr);
+            prevWeekDt.setDate(prevWeekDt.getDate() - 7);
+            this.populateSampleDay(firstId, toDateStr(prevWeekDt));
+          });
+          await this.persistShifts();
+        }
+
+        this.ensureStoreDateInitialized(this.activeStoreId, this.currentDate);
+      },
+
+      populateSampleDay(storeId, dateStr) {
+        this.ensureStoreDateInitialized(storeId, dateStr);
+        const sample = this.shiftsByStore[storeId][dateStr];
+        for (let h = 0; h < 6; h++) sample[h] = ['st-5'];
+        for (let h = 6; h < 9; h++) sample[h] = ['st-1', 'st-3'];
+        for (let h = 9; h < 17; h++) sample[h] = ['st-2', 'st-3'];
+        for (let h = 17; h < 22; h++) sample[h] = ['st-2', 'st-4'];
+        for (let h = 22; h < 24; h++) sample[h] = ['st-5'];
+      },
+
+      ensureStoreDateInitialized(storeId, dateStr) {
+        if (!this.shiftsByStore[storeId]) {
+          this.shiftsByStore[storeId] = {};
+        }
+        if (!this.shiftsByStore[storeId][dateStr]) {
+          const emptyDay = {};
+          for (let h = 0; h < 24; h++) emptyDay[h] = [];
+          this.shiftsByStore[storeId][dateStr] = emptyDay;
+        }
+      },
+
+      ensureStoreMinStaffInitialized(storeId) {
+        if (!this.minStaffByStore[storeId]) {
+          this.minStaffByStore[storeId] = createDefaultWeeklyMinStaffObj();
+          return;
+        }
+        for (let d = 0; d < 7; d++) {
+          if (!this.minStaffByStore[storeId][d]) {
+            this.minStaffByStore[storeId][d] = {};
+          }
+          for (let h = 0; h < 24; h++) {
+            if (typeof this.minStaffByStore[storeId][d][h] !== 'number') {
+              this.minStaffByStore[storeId][d][h] = 2;
+            }
+          }
+        }
+      },
+
+      async persistStores() {
+        await dbSet('storeList', JSON.parse(JSON.stringify(this.storeList)));
+        await dbSet('activeStoreId', this.activeStoreId);
+        if (this.activeTab === 'export') this.updateCanvasPreview();
+      },
+      async persistStaff() {
+        await dbSet('staffList', JSON.parse(JSON.stringify(this.staffList)));
+      },
+      async persistShifts() {
+        await dbSet('shiftsByStore', JSON.parse(JSON.stringify(this.shiftsByStore)));
+      },
+      async persistDayOff() {
+        await dbSet('dayOffByDate', JSON.parse(JSON.stringify(this.dayOffByDate)));
+      },
+      async persistSkillTags() {
+        await dbSet('skillTags', JSON.parse(JSON.stringify(this.skillTags)));
+      },
+      async persistMinStaff() {
+        await dbSet('minStaffByStore', JSON.parse(JSON.stringify(this.minStaffByStore)));
+      },
+
+      // 全員共通スキルテンプレート管理
+      async addSkillTag() {
+        const trimmed = this.newSkillName.trim();
+        if (!trimmed) return;
+        if (this.skillTags.includes(trimmed)) {
+          alert('その習得項目は既に登録されています。');
+          return;
+        }
+        this.skillTags.push(trimmed);
+        this.newSkillName = '';
+        await this.persistSkillTags();
+        this.refreshIcons();
+      },
+
+      async removeSkillTag(skill) {
+        if (!confirm(`共通習得項目「${skill}」を削除しますか？`)) return;
+        this.skillTags = this.skillTags.filter(s => s !== skill);
+        this.staffList.forEach(st => {
+          if (Array.isArray(st.skills)) {
+            st.skills = st.skills.filter(s => s !== skill);
+          }
+        });
+        await this.persistSkillTags();
+        await this.persistStaff();
+        this.refreshIcons();
+      },
+
+      hasStaffSkill(staff, skill) {
+        return Array.isArray(staff.skills) && staff.skills.includes(skill);
+      },
+
+      async toggleStaffSkill(staff, skill) {
+        if (!Array.isArray(staff.skills)) {
+          staff.skills = [];
+        }
+        const idx = staff.skills.indexOf(skill);
+        if (idx === -1) {
+          staff.skills.push(skill);
+        } else {
+          staff.skills.splice(idx, 1);
+        }
+        await this.persistStaff();
+        this.refreshIcons();
+      },
+
+      async removeFixedShift(staff, fixedShiftId) {
+        if (!Array.isArray(staff.fixedShifts)) return;
+        staff.fixedShifts = staff.fixedShifts.filter(fs => fs.id !== fixedShiftId);
+        await this.persistStaff();
+        this.refreshIcons();
+      },
+
+      async applyStaffFixedShiftsToWeek(staff) {
+        if (!staff || !Array.isArray(staff.fixedShifts) || staff.fixedShifts.length === 0) {
+          alert('固定シフトが登録されていません。');
+          return;
+        }
+
+        let blockedDetails = [];
+
+        this.currentWeekDays.forEach(day => {
+          const matchingFixed = staff.fixedShifts.filter(fs => fs.dayIndex === day.dayIndex);
+          matchingFixed.forEach(fs => {
+            this.ensureStoreDateInitialized(this.activeStoreId, day.dateStr);
+            const schedule = this.shiftsByStore[this.activeStoreId][day.dateStr];
+            const hoursToApply = [];
+            if (fs.start < fs.end) {
+              for (let h = fs.start; h < fs.end; h++) hoursToApply.push(h);
+            } else {
+              for (let h = fs.start; h < 24; h++) hoursToApply.push(h);
+              for (let h = 0; h < fs.end; h++) hoursToApply.push(h);
+            }
+
+            hoursToApply.forEach(h => {
+              if (this.isStaffDayOff(day.dateStr, h, staff.id)) {
+                blockedDetails.push(`${day.shortDate}(${day.dayLabel}) ${h}時（希望休）`);
+              } else {
+                const conflictStore = this.getConflictStore(day.dateStr, h, staff.id);
+                if (conflictStore) {
+                  blockedDetails.push(`${day.shortDate}(${day.dayLabel}) ${h}時（${conflictStore.name}）`);
+                } else {
+                  if (!schedule[h].includes(staff.id)) {
+                    schedule[h].push(staff.id);
+                  }
+                }
+              }
+            });
+          });
+        });
+
+        await this.persistShifts();
+        this.refreshIcons();
+
+        const storeName = this.currentStore ? this.currentStore.name : '';
+        if (blockedDetails.length > 0) {
+          alert(`${staff.name}さんの固定シフトを「${storeName}」の${this.weekRangeShortLabel}に反映しました。\n\n※希望休・他店舗重複の以下の時間帯はスキップされました：\n・${blockedDetails.slice(0, 8).join('\n・')}${blockedDetails.length > 8 ? '\n...他' : ''}`);
+        } else {
+          alert(`${staff.name}さんの固定シフトを「${storeName}」の${this.weekRangeShortLabel}に反映しました！`);
+        }
+      },
+
+      // 最低必要人数判定・操作メソッド
+      getMinStaffForDateHour(dateStr, hour) {
+        this.ensureStoreMinStaffInitialized(this.activeStoreId);
+        const dayIndex = parseDateStr(dateStr).getDay();
+        const storeMin = this.minStaffByStore[this.activeStoreId];
+        if (!storeMin || !storeMin[dayIndex] || typeof storeMin[dayIndex][hour] !== 'number') {
+          return 2;
+        }
+        return storeMin[dayIndex][hour];
+      },
+
+      isHourFulfilled(dateStr, hour) {
+        return this.getAssignedStaffForDate(dateStr, hour).length >= this.getMinStaffForDateHour(dateStr, hour);
+      },
+
+      async adjustMinStaffForCurrentDay(hour, delta) {
+        this.ensureStoreMinStaffInitialized(this.activeStoreId);
+        const dayIndex = parseDateStr(this.currentDate).getDay();
+        const currentVal = this.getMinStaffForDateHour(this.currentDate, hour);
+        const nextVal = Math.max(0, currentVal + delta);
+        this.minStaffByStore[this.activeStoreId][dayIndex][hour] = nextVal;
+        await this.persistMinStaff();
+      },
+
+      openMinStaffModal() {
+        const currentDayIdx = parseDateStr(this.currentDate).getDay();
+        this.minStaffBulkForm = {
+          days: [currentDayIdx],
+          start: 0,
+          end: 24,
+          count: 2
+        };
+        this.showMinStaffModal = true;
+        this.refreshIcons();
+      },
+
+      toggleMinStaffFormDay(dayIndex) {
+        const idx = this.minStaffBulkForm.days.indexOf(dayIndex);
+        if (idx === -1) {
+          this.minStaffBulkForm.days.push(dayIndex);
+        } else if (this.minStaffBulkForm.days.length > 1) {
+          this.minStaffBulkForm.days.splice(idx, 1);
+        }
+      },
+
+      selectMinStaffPresetDays(mode) {
+        if (mode === 'all') {
+          this.minStaffBulkForm.days = [1, 2, 3, 4, 5, 6, 0];
+        } else if (mode === 'weekday') {
+          this.minStaffBulkForm.days = [1, 2, 3, 4, 5];
+        } else if (mode === 'weekend') {
+          this.minStaffBulkForm.days = [6, 0];
+        }
+      },
+
+      setMinStaffFormHours(start, end) {
+        this.minStaffBulkForm.start = start;
+        this.minStaffBulkForm.end = end;
+      },
+
+      async applyBulkMinStaff() {
+        if (!this.minStaffBulkForm.days.length) {
+          alert('対象の曜日を選択してください。');
+          return;
+        }
+        this.ensureStoreMinStaffInitialized(this.activeStoreId);
+        const start = this.minStaffBulkForm.start;
+        const end = this.minStaffBulkForm.end;
+        const count = Math.max(0, Number(this.minStaffBulkForm.count) || 0);
+
+        const hours = [];
+        if (start < end) {
+          for (let h = start; h < end; h++) hours.push(h);
+        } else {
+          for (let h = start; h < 24; h++) hours.push(h);
+          for (let h = 0; h < end; h++) hours.push(h);
+        }
+
+        this.minStaffBulkForm.days.forEach(dIdx => {
+          hours.forEach(h => {
+            this.minStaffByStore[this.activeStoreId][dIdx][h] = count;
+          });
+        });
+
+        await this.persistMinStaff();
+        this.showMinStaffModal = false;
+        this.refreshIcons();
+      },
+
+      async resetAllMinStaffToDefault() {
+        if (!confirm('すべての曜日・時間帯の最低必要人数を初期設定（2人）に戻しますか？')) return;
+        this.minStaffByStore[this.activeStoreId] = createDefaultWeeklyMinStaffObj();
+        await this.persistMinStaff();
+        this.showMinStaffModal = false;
+        this.refreshIcons();
+      },
+
+      // 希望休・シフト配置・A4出力メソッド
+      isStaffDayOff(dateStr, hour, staffId) {
+        if (!staffId) return false;
+        const dObj = this.dayOffByDate[dateStr];
+        if (!dObj || !Array.isArray(dObj[staffId])) return false;
+        return dObj[staffId].includes(hour);
+      },
+
+      getDayOffHoursCount(dateStr, staffId) {
+        if (!staffId) return 0;
+        const dObj = this.dayOffByDate[dateStr];
+        if (!dObj || !Array.isArray(dObj[staffId])) return 0;
+        return dObj[staffId].length;
+      },
+
+      getDayOffStatus(dateStr, staffId) {
+        const count = this.getDayOffHoursCount(dateStr, staffId);
+        if (count === 24) return 'full';
+        if (count > 0) return 'partial';
+        return 'none';
+      },
+
+      getDayOffStaffForHour(dateStr, hour) {
+        const dObj = this.dayOffByDate[dateStr];
+        if (!dObj) return [];
+        return this.staffList.filter(st => Array.isArray(dObj[st.id]) && dObj[st.id].includes(hour));
+      },
+
+      hasAnyShiftInStores(dateStr, hoursArray, staffId) {
+        for (const st of this.storeList) {
+          const sched = this.shiftsByStore[st.id] && this.shiftsByStore[st.id][dateStr];
+          if (sched) {
+            for (const h of hoursArray) {
+              if (Array.isArray(sched[h]) && sched[h].includes(staffId)) {
+                return true;
+              }
+            }
+          }
+        }
+        return false;
+      },
+
+      removeShiftsForDayOff(dateStr, hoursArray, staffId) {
+        this.storeList.forEach(st => {
+          const sched = this.shiftsByStore[st.id] && this.shiftsByStore[st.id][dateStr];
+          if (sched) {
+            hoursArray.forEach(h => {
+              if (Array.isArray(sched[h])) {
+                sched[h] = sched[h].filter(id => id !== staffId);
+              }
+            });
+          }
+        });
+      },
+
+      async toggleFullDayOff(dateStr, staffId) {
+        if (!staffId) return;
+        if (!this.dayOffByDate[dateStr]) {
+          this.dayOffByDate[dateStr] = {};
+        }
+        const currentStatus = this.getDayOffStatus(dateStr, staffId);
+        if (currentStatus === 'full') {
+          this.dayOffByDate[dateStr][staffId] = [];
+        } else {
+          const allHours = Array.from({ length: 24 }, (_, i) => i);
+          if (this.hasAnyShiftInStores(dateStr, allHours, staffId)) {
+            const st = this.staffList.find(s => s.id === staffId);
+            if (!confirm(`${st ? st.name : ''}さんはこの日に既にシフトが入っています。シフトを解除して終日希望休に設定しますか？`)) {
+              return;
+            }
+            this.removeShiftsForDayOff(dateStr, allHours, staffId);
+            await this.persistShifts();
+          }
+          this.dayOffByDate[dateStr][staffId] = allHours;
+        }
+        await this.persistDayOff();
+        this.refreshIcons();
+      },
+
+      async toggleHourDayOff(dateStr, hour, staffId) {
+        if (!staffId) return;
+        if (!this.dayOffByDate[dateStr]) {
+          this.dayOffByDate[dateStr] = {};
+        }
+        if (!Array.isArray(this.dayOffByDate[dateStr][staffId])) {
+          this.dayOffByDate[dateStr][staffId] = [];
+        }
+        const arr = this.dayOffByDate[dateStr][staffId];
+        const idx = arr.indexOf(hour);
+        if (idx === -1) {
+          if (this.hasAnyShiftInStores(dateStr, [hour], staffId)) {
+            const st = this.staffList.find(s => s.id === staffId);
+            if (!confirm(`${st ? st.name : ''}さんは${hour}時に既にシフトが入っています。シフトを解除して希望休にしますか？`)) {
+              return;
+            }
+            this.removeShiftsForDayOff(dateStr, [hour], staffId);
+            await this.persistShifts();
+          }
+          arr.push(hour);
+          arr.sort((a, b) => a - b);
+        } else {
+          arr.splice(idx, 1);
+        }
+        await this.persistDayOff();
+        this.refreshIcons();
+      },
+
+      openStoreModal() {
+        this.newStoreName = '';
+        this.showStoreModal = true;
+        this.refreshIcons();
+      },
+
+      async addStore() {
+        const name = this.newStoreName.trim();
+        if (!name) {
+          alert('新しい店舗名を入力してください。');
+          return;
+        }
+        const newId = 'store-' + Date.now();
+        this.storeList.push({ id: newId, name });
+        this.shiftsByStore[newId] = {};
+        this.ensureStoreMinStaffInitialized(newId);
+        this.activeStoreId = newId;
+        this.newStoreName = '';
+        this.ensureStoreDateInitialized(newId, this.currentDate);
+        await this.persistStores();
+        await this.persistShifts();
+        await this.persistMinStaff();
+        this.refreshIcons();
+      },
+
+      async deleteStore(store) {
+        if (this.storeList.length <= 1) {
+          alert('最低1店舗は必要です。');
+          return;
+        }
+        if (!confirm(`「${store.name}」を削除しますか？この店舗のシフトデータも削除されます。`)) return;
+        this.storeList = this.storeList.filter(s => s.id !== store.id);
+        delete this.shiftsByStore[store.id];
+        delete this.minStaffByStore[store.id];
+        if (this.activeStoreId === store.id) {
+          this.activeStoreId = this.storeList[0].id;
+        }
+        await this.persistStores();
+        await this.persistShifts();
+        await this.persistMinStaff();
+        this.refreshIcons();
+      },
+
+      getConflictStore(dateStr, hour, staffId) {
+        for (const st of this.storeList) {
+          if (st.id === this.activeStoreId) continue;
+          const storeShifts = this.shiftsByStore[st.id];
+          if (storeShifts && storeShifts[dateStr] && Array.isArray(storeShifts[dateStr][hour])) {
+            if (storeShifts[dateStr][hour].includes(staffId)) {
+              return st;
+            }
+          }
+        }
+        return null;
+      },
+
+      changeWeek(offsetDays) {
+        const dt = parseDateStr(this.currentDate);
+        dt.setDate(dt.getDate() + offsetDays);
+        this.currentDate = toDateStr(dt);
+      },
+
+      // 一覧グリッド内でスタッフを選択してもアコーディオンを閉じずに維持する
+      selectStaffFromGrid(staffId) {
+        this.selectedStaffId = staffId;
+        this.refreshIcons();
+      },
+
+      getAssignedStaff(hour) {
+        return this.getAssignedStaffForDate(this.currentDate, hour);
+      },
+
+      getAssignedStaffForDate(dateStr, hour) {
+        const daySchedule = this.currentStoreShifts[dateStr];
+        if (!daySchedule || !daySchedule[hour]) return [];
+        return daySchedule[hour]
+          .map(id => this.staffList.find(s => s.id === id))
+          .filter(Boolean);
+      },
+
+      getDayMergedLanes(dateStr) {
+        const daySchedule = this.currentStoreShifts[dateStr];
+        if (!daySchedule) return [];
+
+        const segments = [];
+        this.staffList.forEach(staff => {
+          let h = 0;
+          while (h < 24) {
+            const assigned = daySchedule[h] && daySchedule[h].includes(staff.id);
+            if (assigned) {
+              const start = h;
+              while (h < 24 && daySchedule[h] && daySchedule[h].includes(staff.id)) {
+                h++;
+              }
+              const end = h;
+              segments.push({ staff, start, end });
+            } else {
+              h++;
+            }
+          }
+        });
+
+        segments.sort((a, b) => {
+          if (a.start !== b.start) return a.start - b.start;
+          return (b.end - b.start) - (a.end - a.start);
+        });
+
+        const lanes = [];
+        segments.forEach(seg => {
+          let placed = false;
+          for (let i = 0; i < lanes.length; i++) {
+            const lane = lanes[i];
+            const lastSeg = lane[lane.length - 1];
+            if (lastSeg.end <= seg.start) {
+              lane.push(seg);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            lanes.push([seg]);
+          }
+        });
+
+        return lanes;
+      },
+
+      getDayFilledHoursCount(dateStr) {
+        const daySchedule = this.currentStoreShifts[dateStr];
+        if (!daySchedule) return 0;
+        let filled = 0;
+        for (let h = 0; h < 24; h++) {
+          if (daySchedule[h] && daySchedule[h].length > 0) filled++;
+        }
+        return filled;
+      },
+
+      getStaffTotalHours(staffId) {
+        let count = 0;
+        const schedule = this.currentDaySchedule;
+        for (let h = 0; h < 24; h++) {
+          if (schedule[h] && schedule[h].includes(staffId)) {
+            count++;
+          }
+        }
+        return count;
+      },
+
+      async toggleStaffInHour(hour) {
+        if (!this.selectedStaffId) {
+          alert('配置する従業員を選択してください。');
+          return;
+        }
+        this.ensureStoreDateInitialized(this.activeStoreId, this.currentDate);
+        const list = this.shiftsByStore[this.activeStoreId][this.currentDate][hour];
+        const idx = list.indexOf(this.selectedStaffId);
+
+        if (idx === -1) {
+          if (this.isStaffDayOff(this.currentDate, hour, this.selectedStaffId)) {
+            const staffName = this.selectedStaff ? this.selectedStaff.name : '選択した従業員';
+            alert(`【希望休ブロック】\n${staffName}さんは、この日の${hour}時に「希望休」が登録されているため配置できません。`);
+            return;
+          }
+          const conflictStore = this.getConflictStore(this.currentDate, hour, this.selectedStaffId);
+          if (conflictStore) {
+            const staffName = this.selectedStaff ? this.selectedStaff.name : '選択した従業員';
+            alert(`【重複ブロック】\n${staffName}さんは、この日の${hour}時に「${conflictStore.name}」で既にシフトに入っているため配置できません。`);
+            return;
+          }
+          list.push(this.selectedStaffId);
+        } else {
+          list.splice(idx, 1);
+        }
+        await this.persistShifts();
+        this.refreshIcons();
+      },
+
+      async removeStaffFromHour(hour, staffId) {
+        this.ensureStoreDateInitialized(this.activeStoreId, this.currentDate);
+        const list = this.shiftsByStore[this.activeStoreId][this.currentDate][hour];
+        const idx = list.indexOf(staffId);
+        if (idx !== -1) {
+          list.splice(idx, 1);
+          await this.persistShifts();
+          this.refreshIcons();
+        }
+      },
+
+      openQuickPresetModal() {
+        if (!this.selectedStaff) return;
+        this.showPresetModal = true;
+        this.refreshIcons();
+      },
+
+      applyRangeToDate(dateStr, staffId, startHour, endHour) {
+        this.ensureStoreDateInitialized(this.activeStoreId, dateStr);
+        const schedule = this.shiftsByStore[this.activeStoreId][dateStr];
+        const hoursToApply = [];
+
+        if (startHour < endHour) {
+          for (let h = startHour; h < endHour; h++) hoursToApply.push(h);
+        } else {
+          for (let h = startHour; h < 24; h++) hoursToApply.push(h);
+          for (let h = 0; h < endHour; h++) hoursToApply.push(h);
+        }
+
+        const blockedDetails = [];
+        hoursToApply.forEach(h => {
+          if (this.isStaffDayOff(dateStr, h, staffId)) {
+            blockedDetails.push(`${dateStr.slice(5)} ${h}時（希望休）`);
+          } else {
+            const conflictStore = this.getConflictStore(dateStr, h, staffId);
+            if (conflictStore) {
+              blockedDetails.push(`${dateStr.slice(5)} ${h}時（${conflictStore.name}）`);
+            } else if (!schedule[h].includes(staffId)) {
+              schedule[h].push(staffId);
+            }
+          }
+        });
+
+        return blockedDetails;
+      },
+
+      async applyShiftRange(startHour, endHour) {
+        if (!this.selectedStaffId) return;
+        const blocked = this.applyRangeToDate(this.currentDate, this.selectedStaffId, startHour, endHour);
+        await this.persistShifts();
+        this.showPresetModal = false;
+        this.refreshIcons();
+        if (blocked.length > 0) {
+          alert(`希望休または他店舗勤務中の以下の時間帯は自動ブロック（除外）されました：\n・${blocked.join('\n・')}`);
+        }
+      },
+
+      async applyShiftRangeToWholeWeek(startHour, endHour) {
+        if (!this.selectedStaffId) return;
+        let allBlocked = [];
+        this.currentWeekDays.forEach(day => {
+          const blocked = this.applyRangeToDate(day.dateStr, this.selectedStaffId, startHour, endHour);
+          allBlocked = allBlocked.concat(blocked);
+        });
+        await this.persistShifts();
+        this.showPresetModal = false;
+        this.refreshIcons();
+        if (allBlocked.length > 0) {
+          alert(`希望休または他店舗勤務中の以下の時間帯（計${allBlocked.length}コマ）は自動ブロック（除外）されました：\n・${allBlocked.slice(0, 8).join('\n・')}${allBlocked.length > 8 ? '\n...他' : ''}`);
+        }
+      },
+
+      async clearStaffFromCurrentDay(staffId) {
+        this.ensureStoreDateInitialized(this.activeStoreId, this.currentDate);
+        const schedule = this.shiftsByStore[this.activeStoreId][this.currentDate];
+        for (let h = 0; h < 24; h++) {
+          schedule[h] = schedule[h].filter(id => id !== staffId);
+        }
+        await this.persistShifts();
+        this.showPresetModal = false;
+        this.refreshIcons();
+      },
+
+      async copyPreviousDayShift() {
+        const dt = parseDateStr(this.currentDate);
+        dt.setDate(dt.getDate() - 1);
+        const prevDate = toDateStr(dt);
+
+        const prevSchedule = this.currentStoreShifts[prevDate];
+        const hasAnyData = prevSchedule && Object.values(prevSchedule).some(arr => Array.isArray(arr) && arr.length > 0);
+        if (!hasAnyData) {
+          alert(`前日（${prevDate}）にコピーできるシフトデータがありません。`);
+          return;
+        }
+
+        const newDaySchedule = {};
+        let blockedCount = 0;
+        for (let h = 0; h < 24; h++) {
+          const prevStaffIds = prevSchedule[h] || [];
+          newDaySchedule[h] = prevStaffIds.filter(staffId => {
+            if (this.isStaffDayOff(this.currentDate, h, staffId) || this.getConflictStore(this.currentDate, h, staffId)) {
+              blockedCount++;
+              return false;
+            }
+            return true;
+          });
+        }
+
+        this.shiftsByStore[this.activeStoreId][this.currentDate] = newDaySchedule;
+        await this.persistShifts();
+        this.refreshIcons();
+        if (blockedCount > 0) {
+          alert(`前日のシフトをコピーしました（希望休・他店舗重複の ${blockedCount} コマは自動ブロックされました）。`);
+        }
+      },
+
+      async copyPreviousWeekShift() {
+        const currentDays = this.currentWeekDays;
+        let hasPrevWeekData = false;
+
+        currentDays.forEach(day => {
+          const dt = parseDateStr(day.dateStr);
+          dt.setDate(dt.getDate() - 7);
+          const prevWeekDateStr = toDateStr(dt);
+          const sched = this.currentStoreShifts[prevWeekDateStr];
+          if (sched && Object.values(sched).some(arr => Array.isArray(arr) && arr.length > 0)) {
+            hasPrevWeekData = true;
+          }
+        });
+
+        if (!hasPrevWeekData) {
+          alert('前週（月〜日）にコピーできるシフトデータがありません。');
+          return;
+        }
+
+        if (!confirm('前週（月〜日）のシフトを今週7日間に一括コピーしますか？')) return;
+
+        let blockedCount = 0;
+        currentDays.forEach(day => {
+          const dt = parseDateStr(day.dateStr);
+          dt.setDate(dt.getDate() - 7);
+          const prevWeekDateStr = toDateStr(dt);
+          const prevSchedule = this.currentStoreShifts[prevWeekDateStr];
+          const newDaySchedule = {};
+
+          for (let h = 0; h < 24; h++) {
+            const prevStaffIds = (prevSchedule && prevSchedule[h]) ? prevSchedule[h] : [];
+            newDaySchedule[h] = prevStaffIds.filter(staffId => {
+              if (this.isStaffDayOff(day.dateStr, h, staffId) || this.getConflictStore(day.dateStr, h, staffId)) {
+                blockedCount++;
+                return false;
+              }
+              return true;
+            });
+          }
+          this.shiftsByStore[this.activeStoreId][day.dateStr] = newDaySchedule;
+        });
+
+        await this.persistShifts();
+        this.refreshIcons();
+        if (blockedCount > 0) {
+          alert(`前週のシフトをコピーしました（希望休・他店舗重複の ${blockedCount} コマは自動ブロックされました）。`);
+        }
+      },
+
+      async clearCurrentDayShift() {
+        if (!confirm(`${this.formattedDateShort} のシフト配置をすべてリセットしますか？`)) return;
+        const emptyDay = {};
+        for (let h = 0; h < 24; h++) emptyDay[h] = [];
+        this.shiftsByStore[this.activeStoreId][this.currentDate] = emptyDay;
+        await this.persistShifts();
+        this.refreshIcons();
+      },
+
+      async saveStaff() {
+        const trimmedName = this.staffForm.name.trim();
+        if (!trimmedName) {
+          alert('従業員の名前を入力してください。');
+          return;
+        }
+
+        const autoColor = getUniqueDistinctColor(this.staffList);
+        const newStaff = {
+          id: 'st-' + Date.now(),
+          name: trimmedName,
+          color: autoColor,
+          skills: [],
+          fixedShifts: []
+        };
+        this.staffList.push(newStaff);
+        this.selectedStaffId = newStaff.id;
+        this.staffForm.name = '';
+
+        await this.persistStaff();
+        this.refreshIcons();
+      },
+
+      confirmDeleteStaff(staff) {
+        this.staffToDelete = staff;
+        this.refreshIcons();
+      },
+
+      async deleteStaffConfirmed() {
+        if (!this.staffToDelete) return;
+        const targetId = this.staffToDelete.id;
+
+        this.staffList = this.staffList.filter(s => s.id !== targetId);
+
+        Object.keys(this.shiftsByStore).forEach(storeId => {
+          const storeShifts = this.shiftsByStore[storeId];
+          Object.keys(storeShifts).forEach(dateKey => {
+            const dayObj = storeShifts[dateKey];
+            for (let h = 0; h < 24; h++) {
+              if (Array.isArray(dayObj[h])) {
+                dayObj[h] = dayObj[h].filter(id => id !== targetId);
+              }
+            }
+          });
+        });
+
+        Object.keys(this.dayOffByDate).forEach(dateKey => {
+          if (this.dayOffByDate[dateKey] && this.dayOffByDate[dateKey][targetId]) {
+            delete this.dayOffByDate[dateKey][targetId];
+          }
+        });
+
+        if (this.selectedStaffId === targetId) {
+          this.selectedStaffId = this.staffList.length > 0 ? this.staffList[0].id : null;
+        }
+        if (this.expandedStaffId === targetId) {
+          this.expandedStaffId = null;
+        }
+
+        this.staffToDelete = null;
+        await this.persistStaff();
+        await this.persistShifts();
+        await this.persistDayOff();
+        this.refreshIcons();
+      },
+
+      // ==========================================
+      // HTML5 Canvas ネイティブ高精細A4描画エンジン
+      // ==========================================
+      renderA4ShiftCanvas() {
+        const scale = 1.5;
+        const logicalW = 1123;
+        const logicalH = 794;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = logicalW * scale;
+        canvas.height = logicalH * scale;
+
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+
+        const fontStack = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif';
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, logicalW, logicalH);
+
+        const padX = 24;
+        const headerBottomY = 54;
+
+        ctx.fillStyle = '#0F172A';
+        ctx.font = `900 24px ${fontStack}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        const storeTitle = (this.currentStore && this.currentStore.name) ? this.currentStore.name : '店舗名未設定';
+        ctx.fillText(storeTitle, padX, 42);
+
+        const storeTitleWidth = ctx.measureText(storeTitle).width;
+        ctx.fillStyle = '#334155';
+        ctx.font = `800 17px ${fontStack}`;
+        ctx.fillText(`${this.weekRangeFullLabel} のシフト表`, padX + storeTitleWidth + 20, 41);
+
+        ctx.fillStyle = '#64748B';
+        ctx.font = `700 12px ${fontStack}`;
+        ctx.textAlign = 'right';
+        ctx.fillText('0時〜23時（24時間表記）', logicalW - padX, 41);
+
+        ctx.strokeStyle = '#0F172A';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(padX, headerBottomY);
+        ctx.lineTo(logicalW - padX, headerBottomY);
+        ctx.stroke();
+
+        const tableX = padX;
+        const tableY = 64;
+        const tableW = logicalW - padX * 2;
+        const tableH = logicalH - tableY - 20;
+        const dateColW = 94;
+        const gridX = tableX + dateColW;
+        const gridW = tableW - dateColW;
+        const hourColW = gridW / 24;
+        const headRowH = 34;
+        const bodyY = tableY + headRowH;
+        const bodyH = tableH - headRowH;
+        const dayRowH = bodyH / 7;
+
+        ctx.fillStyle = '#0F172A';
+        ctx.fillRect(tableX, tableY, tableW, headRowH);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = `800 12px ${fontStack}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('日付 / 曜日', tableX + dateColW / 2, tableY + headRowH / 2);
+
+        for (let h = 0; h < 24; h++) {
+          const colX = gridX + h * hourColW;
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(colX, tableY);
+          ctx.lineTo(colX, tableY + headRowH);
+          ctx.stroke();
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = `800 11px ${fontStack}`;
+          ctx.fillText(`${h}時`, colX + hourColW / 2, tableY + headRowH / 2);
+        }
+
+        const days = this.currentWeekDays;
+        for (let dIdx = 0; dIdx < 7; dIdx++) {
+          const day = days[dIdx];
+          const rowY = bodyY + dIdx * dayRowH;
+
+          if (day.dayIndex === 0) {
+            ctx.fillStyle = '#FEF2F2';
+          } else if (day.dayIndex === 6) {
+            ctx.fillStyle = '#EFF6FF';
+          } else {
+            ctx.fillStyle = '#F1F5F9';
+          }
+          ctx.fillRect(tableX, rowY, dateColW, dayRowH);
+
+          if (day.dayIndex === 0) {
+            ctx.fillStyle = '#B91C1C';
+          } else if (day.dayIndex === 6) {
+            ctx.fillStyle = '#1D4ED8';
+          } else {
+            ctx.fillStyle = '#0F172A';
+          }
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `900 16px ${fontStack}`;
+          ctx.fillText(day.shortDate, tableX + dateColW / 2, rowY + dayRowH / 2 - 9);
+          ctx.font = `800 12px ${fontStack}`;
+          ctx.fillText(`（${day.dayLabel}）`, tableX + dateColW / 2, rowY + dayRowH / 2 + 11);
+
+          for (let h = 1; h < 24; h++) {
+            const colX = gridX + h * hourColW;
+            ctx.strokeStyle = h % 6 === 0 ? '#94A3B8' : '#E2E8F0';
+            ctx.lineWidth = h % 6 === 0 ? 1.2 : 1;
+            ctx.beginPath();
+            ctx.moveTo(colX, rowY);
+            ctx.lineTo(colX, rowY + dayRowH);
+            ctx.stroke();
+          }
+
+          const lanes = this.getDayMergedLanes(day.dateStr);
+          const laneCount = lanes.length;
+
+          if (laneCount > 0) {
+            const padY = 6;
+            const gapY = laneCount > 2 ? 3 : 4;
+            const availH = dayRowH - padY * 2;
+            const maxBarH = 34;
+            const rawBarH = (availH - gapY * (laneCount - 1)) / laneCount;
+            const barH = Math.max(14, Math.min(maxBarH, rawBarH));
+            const totalBarsH = barH * laneCount + gapY * (laneCount - 1);
+            const startY = rowY + (dayRowH - totalBarsH) / 2;
+
+            for (let lIdx = 0; lIdx < laneCount; lIdx++) {
+              const lane = lanes[lIdx];
+              const by = startY + lIdx * (barH + gapY);
+
+              lane.forEach(seg => {
+                const duration = seg.end - seg.start;
+                const bx = gridX + seg.start * hourColW + 1.5;
+                const bw = duration * hourColW - 3;
+
+                ctx.fillStyle = seg.staff.color;
+                fillRoundRect(ctx, bx, by, bw, barH, 5);
+
+                ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(bx + 2, by, Math.max(0, bw - 4), barH);
+                ctx.clip();
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                const baseFontSize = Math.min(14, Math.max(10, Math.floor(barH * 0.52)));
+                const fullLabel = `${seg.staff.name} (${seg.start}〜${seg.end}時)`;
+                const shortTimeLabel = `${seg.staff.name} (${seg.start}-${seg.end})`;
+                const nameOnlyLabel = seg.staff.name;
+
+                ctx.font = `900 ${baseFontSize}px ${fontStack}`;
+
+                let drawText = nameOnlyLabel;
+                if (duration >= 2 && ctx.measureText(fullLabel).width <= bw - 8) {
+                  drawText = fullLabel;
+                } else if (duration >= 2 && ctx.measureText(shortTimeLabel).width <= bw - 6) {
+                  drawText = shortTimeLabel;
+                } else if (ctx.measureText(nameOnlyLabel).width <= bw - 4) {
+                  drawText = nameOnlyLabel;
+                } else {
+                  const smallerFont = Math.max(9, baseFontSize - 2);
+                  ctx.font = `900 ${smallerFont}px ${fontStack}`;
+                  drawText = nameOnlyLabel;
+                }
+
+                ctx.fillText(drawText, bx + bw / 2, by + barH / 2 + 0.5);
+                ctx.restore();
+              });
+            }
+          }
+
+          if (dIdx < 6) {
+            ctx.strokeStyle = '#94A3B8';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(tableX, rowY + dayRowH);
+            ctx.lineTo(tableX + tableW, rowY + dayRowH);
+            ctx.stroke();
+          }
+        }
+
+        ctx.strokeStyle = '#0F172A';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(gridX, tableY);
+        ctx.lineTo(gridX, tableY + tableH);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#0F172A';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(tableX, tableY, tableW, tableH);
+
+        return canvas;
+      },
+
+      updateCanvasPreview() {
+        const canvas = this.renderA4ShiftCanvas();
+        this.previewDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      },
+
+      async exportAsPNG() {
+        if (this.isExporting) return;
+        this.isExporting = true;
+        try {
+          const canvas = this.renderA4ShiftCanvas();
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
+          this.previewDataUrl = dataUrl;
+
+          const mondayStr = this.currentWeekDays[0].dateStr;
+          const storeTitle = (this.currentStore && this.currentStore.name) ? this.currentStore.name : '店舗';
+          const fileName = `週間シフト表_${storeTitle}_${mondayStr}週.jpg`;
+
+          const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.90));
+          if (!blob) throw new Error('画像データの生成に失敗しました。');
+
+          const file = new File([blob], fileName, { type: 'image/jpeg' });
+
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({
+                files: [file],
+                title: fileName
+              });
+              return;
+            } catch (shareErr) {
+              if (shareErr.name === 'AbortError') return;
+            }
+          }
+
+          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          if (isMobile) {
+            this.showPhotoSaveModal = true;
+          } else {
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = fileName;
+            link.href = blobUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+          }
+        } catch (err) {
+          this.showPhotoSaveModal = true;
+        } finally {
+          this.isExporting = false;
+        }
+      },
+
+      async exportAsPDF() {
+        if (this.isExporting) return;
+        this.isExporting = true;
+        try {
+          const canvas = this.renderA4ShiftCanvas();
+          const imgData = canvas.toDataURL('image/jpeg', 0.85);
+          this.previewDataUrl = imgData;
+
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: 'a4',
+            compress: true
+          });
+          
+          pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
+          const mondayStr = this.currentWeekDays[0].dateStr;
+          const storeTitle = (this.currentStore && this.currentStore.name) ? this.currentStore.name : '店舗';
+          const fileName = `週間シフト表_${storeTitle}_${mondayStr}週.pdf`;
+
+          const pdfBlob = pdf.output('blob');
+          const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+          if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+            try {
+              await navigator.share({
+                files: [pdfFile],
+                title: fileName
+              });
+              return;
+            } catch (shareErr) {
+              if (shareErr.name === 'AbortError') return;
+            }
+          }
+
+          pdf.save(fileName);
+        } catch (err) {
+          alert('PDFの出力に失敗しました: ' + err.message);
+        } finally {
+          this.isExporting = false;
+        }
+      }
+    }
+  }).mount('#app');
+</script>
+</body>
+</html>
